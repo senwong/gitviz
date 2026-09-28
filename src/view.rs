@@ -3337,6 +3337,12 @@ impl GraphView {
                     }),
             )
             .child(
+                div()
+                    .text_sm()
+                    .text_color(theme.text_muted)
+                    .child("⌘O open a repository · ⇧⌘O open a workspace · or drop a folder here"),
+            )
+            .child(
                 v_flex()
                     .w(px(560.))
                     .max_h(px(360.))
