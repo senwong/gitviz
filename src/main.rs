@@ -22,12 +22,21 @@ use gpui_platform::application;
 
 fn main() {
     // `--head` selects the HEAD commit on load (handy for screencasts/scripts).
-    let select_head = std::env::args().any(|arg| arg == "--head");
+    let raw_args: Vec<String> = std::env::args().skip(1).collect();
+    if raw_args.iter().any(|arg| arg == "--help" || arg == "-h") {
+        print_help();
+        return;
+    }
+    if raw_args.iter().any(|arg| arg == "--version" || arg == "-V") {
+        println!("gitviz {}", env!("CARGO_PKG_VERSION"));
+        return;
+    }
+    let select_head = raw_args.iter().any(|arg| arg == "--head");
     let roots: Vec<PathBuf> = {
         // macOS passes `-psn_<...>` when an app is launched from Finder/`open`;
         // it is not a path.
-        let args: Vec<PathBuf> = std::env::args()
-            .skip(1)
+        let args: Vec<PathBuf> = raw_args
+            .iter()
             .filter(|arg| !arg.starts_with("-psn_") && !arg.starts_with("--"))
             .map(Into::into)
             .collect();
@@ -83,6 +92,26 @@ fn window_bounds(cx: &App) -> Bounds<gpui::Pixels> {
         origin: point(px(ox), px(oy)),
         size: size(px(width), px(height)),
     }
+}
+
+fn print_help() {
+    println!(
+        r#"gitviz {version} — a standalone, multi-repository git graph viewer
+
+USAGE:
+    gitviz [OPTIONS] [PATH ...]
+
+ARGS:
+    PATH ...    Repositories, directories containing repositories, or a
+                `.gitviz-workspace` file. Defaults to the current directory
+                (or the last session's repositories when launched from Finder).
+
+OPTIONS:
+    --head          Select the HEAD commit on load
+    -h, --help      Print this help and exit
+    -V, --version   Print the version and exit"#,
+        version = env!("CARGO_PKG_VERSION")
+    );
 }
 
 fn app_menus() -> Vec<Menu> {
