@@ -49,6 +49,40 @@ pub struct LogFilter {
     pub use_mailmap: bool,
     pub include_reflogs: bool,
     pub remote_heads: bool,
+    /// Show only commits that are reachable from tags (and not from any
+    /// branch or remote).
+    pub only_tags: bool,
+}
+
+/// The ref-related `git log` arguments implied by a filter. Pure so it can be
+/// unit tested without a repository.
+pub fn log_ref_args(filter: &LogFilter) -> Vec<String> {
+    if filter.only_tags {
+        return vec![
+            "--tags".into(),
+            "--not".into(),
+            "--branches".into(),
+            "--remotes".into(),
+        ];
+    }
+
+    let mut args = Vec::new();
+    if filter.first_parent {
+        args.push("--first-parent".into());
+    }
+    if filter.branches {
+        args.push("--branches".into());
+    }
+    if filter.remotes {
+        args.push("--remotes".into());
+    }
+    if filter.tags {
+        args.push("--tags".into());
+    }
+    if filter.remote_heads {
+        args.push("--glob=refs/remotes/*/HEAD".into());
+    }
+    args
 }
 
 #[derive(Clone, Debug, Default)]
@@ -128,21 +162,7 @@ pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<
     if filter.include_reflogs {
         args.push("--reflog".into());
     }
-    if filter.first_parent {
-        args.push("--first-parent".into());
-    }
-    if filter.branches {
-        args.push("--branches".into());
-    }
-    if filter.remotes {
-        args.push("--remotes".into());
-    }
-    if filter.tags {
-        args.push("--tags".into());
-    }
-    if filter.remote_heads {
-        args.push("--glob=refs/remotes/*/HEAD".into());
-    }
+    args.extend(log_ref_args(filter));
     args.push("HEAD".into());
 
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -416,6 +436,11 @@ pub fn file_diff(repo: &Path, sha: &str, path: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Unified diff of a single file between two commits.
+pub fn compare_file_diff(repo: &Path, from: &str, to: &str, path: &str) -> String {
+    run(repo, &["diff", "--no-color", from, to, "--", path]).unwrap_or_default()
+}
+
 pub fn compare_files(repo: &Path, from: &str, to: &str) -> Vec<ChangedFile> {
     let output = run(repo, &["diff", "--numstat", from, to]).unwrap_or_default();
     output
@@ -639,11 +664,20 @@ pub fn drop_commit(repo: &Path, sha: &str) -> anyhow::Result<()> {
 
 /// First character of `git log -1 --format=%G?`, e.g. `G` for a good signature.
 pub fn signature_status(repo: &Path, sha: &str) -> Option<char> {
-    run(repo, &["log", "-1", "--format=%G?", sha])
+    let code = run(repo, &["log", "-1", "--format=%G?", sha])
         .ok()?
         .trim()
         .chars()
-        .next()
+        .next()?;
+    // 'N' means there is no signature at all.
+    (code != 'N').then_some(code)
+}
+
+/// The verification message for a signed commit (`%GG`), if any.
+pub fn signature_details(repo: &Path, sha: &str) -> Option<String> {
+    let text = run(repo, &["log", "-1", "--format=%GG", sha]).ok()?;
+    let text = text.trim().to_string();
+    (!text.is_empty()).then_some(text)
 }
 
 pub fn default_branch(repo: &Path) -> Option<String> {
@@ -714,6 +748,47 @@ mod tests {
     fn urlencode_escapes_specials() {
         assert_eq!(urlencode("a b/c"), "a%20b%2Fc");
         assert_eq!(urlencode("safe-._~"), "safe-._~");
+    }
+
+    #[test]
+    fn log_args_include_enabled_refs() {
+        let filter = LogFilter {
+            branches: true,
+            remotes: true,
+            tags: true,
+            ..LogFilter::default()
+        };
+        let args = log_ref_args(&filter);
+        assert_eq!(args, vec!["--branches", "--remotes", "--tags"]);
+        assert!(!args.contains(&"--first-parent".to_string()));
+    }
+
+    #[test]
+    fn log_args_first_parent_and_remote_heads() {
+        let filter = LogFilter {
+            first_parent: true,
+            branches: true,
+            remote_heads: true,
+            ..LogFilter::default()
+        };
+        let args = log_ref_args(&filter);
+        assert_eq!(args[0], "--first-parent");
+        assert!(args.contains(&"--glob=refs/remotes/*/HEAD".to_string()));
+    }
+
+    #[test]
+    fn log_args_only_tags() {
+        let filter = LogFilter {
+            only_tags: true,
+            branches: true,
+            remotes: true,
+            tags: true,
+            ..LogFilter::default()
+        };
+        assert_eq!(
+            log_ref_args(&filter),
+            vec!["--tags", "--not", "--branches", "--remotes"]
+        );
     }
 }
 

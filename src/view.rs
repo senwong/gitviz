@@ -84,6 +84,11 @@ pub struct GraphView {
     review: ReviewStore,
     hovered: Option<RowKind>,
     repo_order: RepoOrder,
+    ref_align: RefAlign,
+    commands: CommandPalette,
+    matches: Vec<usize>,
+    match_cursor: usize,
+    signature_details: Option<String>,
     filter: LogFilter,
     show_stashes: bool,
     show_uncommitted: bool,
@@ -121,6 +126,73 @@ enum RepoOrder {
     Name,
     Path,
     Given,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RefAlign {
+    Left,
+    Right,
+}
+
+#[derive(Default)]
+struct CommandPalette {
+    open: bool,
+    query: String,
+    selected: usize,
+}
+
+/// (label, chip id) for the command palette.
+const COMMANDS: &[(&str, &str)] = &[
+    ("Refresh (fetch tags)", "refresh"),
+    ("Push branch", "push"),
+    ("Create pull request", "pr"),
+    ("Toggle stashes", "toggle-stashes"),
+    ("Toggle uncommitted changes", "toggle-uncommitted"),
+    ("Branch filter", "branch-filter"),
+    ("Settings", "settings"),
+    ("Find", "find"),
+    ("Toggle theme", "theme"),
+    ("Load more commits", "load-more"),
+    ("Export config", "export-config"),
+    ("End all code reviews", "end-reviews"),
+];
+
+fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
+    let query = query.to_lowercase();
+    COMMANDS
+        .iter()
+        .copied()
+        .filter(|(label, _)| query.is_empty() || label.to_lowercase().contains(&query))
+        .collect()
+}
+
+fn find_matches(commits: &[Commit], query: &str) -> Vec<usize> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+    let query = query.to_lowercase();
+    commits
+        .iter()
+        .enumerate()
+        .filter(|(_, commit)| {
+            commit.subject.to_lowercase().contains(&query)
+                || commit.author.to_lowercase().contains(&query)
+                || commit.sha.starts_with(&query)
+        })
+        .map(|(index, _)| index)
+        .collect()
+}
+
+fn format_refs(refs: &[String], combine: bool, align: RefAlign) -> Vec<String> {
+    let mut names = if combine {
+        combine_refs(refs)
+    } else {
+        refs.to_vec()
+    };
+    if align == RefAlign::Right {
+        names.reverse();
+    }
+    names
 }
 
 impl RepoOrder {
@@ -267,6 +339,11 @@ impl GraphView {
             review: ReviewStore::load(),
             hovered: None,
             repo_order: RepoOrder::Name,
+            ref_align: RefAlign::Left,
+            commands: CommandPalette::default(),
+            matches: Vec::new(),
+            match_cursor: 0,
+            signature_details: None,
             filter: LogFilter {
                 branches: true,
                 remotes: true,
@@ -275,6 +352,7 @@ impl GraphView {
                 use_mailmap: false,
                 include_reflogs: false,
                 remote_heads: false,
+                only_tags: false,
             },
             show_stashes: true,
             show_uncommitted: true,
@@ -328,6 +406,9 @@ impl GraphView {
 
         self.branch = git::head_branch(&repo.path);
         self.signature = None;
+        self.signature_details = None;
+        self.matches.clear();
+        self.match_cursor = 0;
         self.head_ancestors = git::head_ancestors(&repo.path, 50_000);
         self.branch_filter.all = git::local_branches(&repo.path);
         self.remotes = git::remotes(&repo.path);
@@ -426,6 +507,7 @@ impl GraphView {
                 self.detail = git::commit_detail(&repo.path, &sha).ok();
             }
             self.signature = git::signature_status(&repo.path, &sha);
+            self.signature_details = git::signature_details(&repo.path, &sha);
         }
         cx.notify();
     }
@@ -473,14 +555,34 @@ impl GraphView {
         }
     }
 
-    fn toggle_compare(&mut self, commit_index: usize, cx: &mut Context<Self>) {
-        if self.compare == Some(commit_index) {
-            self.compare = None;
-            self.load_detail(commit_index, cx);
-        } else {
-            self.compare = Some(commit_index);
-            self.load_detail(commit_index, cx);
+    fn selected_commit_index(&self) -> Option<usize> {
+        match self.selected {
+            Some(RowKind::Commit(index)) => Some(index),
+            _ => None,
         }
+    }
+
+    fn toggle_compare(&mut self, commit_index: usize, cx: &mut Context<Self>) {
+        if self.compare.is_some() {
+            self.compare = None;
+        } else {
+            self.compare = self.selected_commit_index().or(Some(commit_index));
+        }
+        self.select_row(RowKind::Commit(commit_index), cx);
+    }
+
+    fn jump_match(&mut self, delta: i32, cx: &mut Context<Self>) {
+        if self.matches.is_empty() {
+            self.matches = find_matches(&self.commits, &self.search_query);
+        }
+        if self.matches.is_empty() {
+            return;
+        }
+        let len = self.matches.len() as i32;
+        let next = ((self.match_cursor as i32 + delta).rem_euclid(len)) as usize;
+        self.match_cursor = next;
+        let commit_index = self.matches[next];
+        self.select_row(RowKind::Commit(commit_index), cx);
     }
 
     fn run_op<F>(&mut self, op: F, cx: &mut Context<Self>)
@@ -508,9 +610,19 @@ impl GraphView {
         if cmd {
             match keystroke.key.as_str() {
                 "p" => {
-                    self.palette.open = !self.palette.open;
-                    self.palette.query.clear();
-                    self.palette.selected = 0;
+                    if keystroke.modifiers.shift {
+                        self.commands.open = !self.commands.open;
+                        self.commands.query.clear();
+                        self.commands.selected = 0;
+                    } else {
+                        self.palette.open = !self.palette.open;
+                        self.palette.query.clear();
+                        self.palette.selected = 0;
+                    }
+                }
+                "g" => {
+                    self.jump_match(if keystroke.modifiers.shift { -1 } else { 1 }, cx);
+                    return;
                 }
                 "f" => self.search_active = !self.search_active,
                 "r" => {
@@ -566,6 +678,40 @@ impl GraphView {
                     if let Some(character) = &keystroke.key_char {
                         self.palette.query.push_str(character);
                         self.palette.selected = 0;
+                    }
+                }
+            }
+            cx.notify();
+            return;
+        }
+
+        if self.commands.open {
+            match keystroke.key.as_str() {
+                "escape" => self.commands.open = false,
+                "enter" => {
+                    let commands = filter_commands(&self.commands.query);
+                    let index = self.commands.selected.min(commands.len().saturating_sub(1));
+                    if let Some((_, id)) = commands.get(index).copied() {
+                        self.commands.open = false;
+                        self.on_chip(id, cx);
+                    }
+                    return;
+                }
+                "up" => self.commands.selected = self.commands.selected.saturating_sub(1),
+                "down" => {
+                    let count = filter_commands(&self.commands.query).len();
+                    if count > 0 && self.commands.selected + 1 < count {
+                        self.commands.selected += 1;
+                    }
+                }
+                "backspace" => {
+                    self.commands.query.pop();
+                    self.commands.selected = 0;
+                }
+                _ => {
+                    if let Some(character) = &keystroke.key_char {
+                        self.commands.query.push_str(character);
+                        self.commands.selected = 0;
                     }
                 }
             }
@@ -957,6 +1103,12 @@ impl Render for GraphView {
         if self.rows_dirty {
             self.rebuild_rows();
         }
+        if !self.search_query.is_empty() {
+            self.matches = find_matches(&self.commits, &self.search_query);
+            if self.match_cursor >= self.matches.len() {
+                self.match_cursor = 0;
+            }
+        }
         let theme = self.theme.clone();
         let weak = cx.weak_entity();
 
@@ -1047,6 +1199,9 @@ impl Render for GraphView {
             date_width: self.date_width,
             author_width: self.author_width,
             commit_width: self.commit_width,
+            ref_align: self.ref_align,
+            matches: Arc::new(self.matches.clone()),
+            match_cursor: self.match_cursor,
         };
 
         let body: AnyElement = if let Some(error) = &self.error {
@@ -1066,6 +1221,7 @@ impl Render for GraphView {
         let detail = self.selected.is_some().then(|| self.render_detail(weak.clone()));
 
         let palette = self.palette.open.then(|| self.render_palette(weak.clone()));
+        let commands = self.commands.open.then(|| self.render_commands(weak.clone()));
         let prompt = self.prompt.is_some().then(|| self.render_prompt());
         let menu = self.menu.is_some().then(|| self.render_menu(weak.clone()));
         let branch_filter = self.branch_filter.open.then(|| self.render_branch_filter(weak.clone()));
@@ -1092,6 +1248,7 @@ impl Render for GraphView {
             .child(self.render_footer())
             .when_some(diff, |this, diff| this.child(diff))
             .when_some(palette, |this, palette| this.child(palette))
+            .when_some(commands, |this, commands| this.child(commands))
             .when_some(branch_filter, |this, filter| this.child(filter))
             .when_some(settings, |this, settings| this.child(settings))
             .when_some(prompt, |this, prompt| this.child(prompt))
@@ -1259,6 +1416,17 @@ impl GraphView {
                         meta
                     })),
             )
+            .when_some(self.signature_details.clone(), |this, details| {
+                this.child(
+                    div()
+                        .w_full()
+                        .px_3()
+                        .py_1()
+                        .text_sm()
+                        .text_color(theme.text_muted)
+                        .child(details),
+                )
+            })
             .child(self.render_message(&detail.message))
             .child(self.render_tags(&sha))
             .child(self.render_detail_actions(&sha, weak))
@@ -1443,6 +1611,59 @@ impl GraphView {
             .into_any_element()
     }
 
+    fn render_commands(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
+        let theme = self.theme.clone();
+        let commands = filter_commands(&self.commands.query);
+        let selected = self.commands.selected.min(commands.len().saturating_sub(1));
+
+        let items: Vec<AnyElement> = commands
+            .iter()
+            .enumerate()
+            .map(|(position, (label, id))| {
+                let is_selected = position == selected;
+                let weak = weak.clone();
+                let theme = theme.clone();
+                let label = *label;
+                let id = *id;
+                h_flex()
+                    .id(("command", id))
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .when(is_selected, |this| this.bg(theme.selected))
+                    .on_click(move |_: &ClickEvent, window, cx| {
+                        let _ = window;
+                        weak.update(cx, |this, cx| {
+                            this.commands.open = false;
+                            this.on_chip(id, cx);
+                        })
+                        .ok();
+                    })
+                    .child(div().text_color(theme.text).child(label))
+                    .into_any_element()
+            })
+            .collect();
+
+        let query_line = if self.commands.query.is_empty() {
+            "Command palette…".to_string()
+        } else {
+            self.commands.query.clone()
+        };
+
+        overlay(theme.clone(), 120., 520., vec![
+            div()
+                .w_full()
+                .px_3()
+                .py_2()
+                .text_color(theme.text)
+                .border_b_1()
+                .border_color(theme.border)
+                .child(query_line)
+                .into_any_element(),
+            v_flex().w_full().overflow_y_scroll().children(items).into_any_element(),
+        ])
+    }
+
     fn render_palette(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
         let theme = self.theme.clone();
         let filtered = self.filtered_repos();
@@ -1604,6 +1825,7 @@ impl GraphView {
             ("Respect .mailmap", self.use_mailmap, "mailmap"),
             ("Include reflog commits", self.include_reflogs, "reflogs"),
             ("Show remote HEAD refs", self.show_remote_heads, "remote-heads"),
+            ("Only tag commits", self.filter.only_tags, "only-tags"),
             ("File tree in details", self.file_tree, "file-tree"),
             ("Compact folders", self.compact_folders, "compact-folders"),
         ];
@@ -1635,6 +1857,7 @@ impl GraphView {
 
         for (label, id) in [
             ("Cycle repository order (name/path/given)", "repo-order"),
+            ("Cycle reference alignment", "ref-align"),
             ("Cycle lane colours", "color-preset"),
             ("Export configuration to .gitviz.conf", "export-config"),
             ("End all code reviews", "end-reviews"),
@@ -1934,6 +2157,17 @@ impl GraphView {
                 self.load(cx);
                 return;
             }
+            "only-tags" => {
+                self.filter.only_tags = !self.filter.only_tags;
+                self.load(cx);
+                return;
+            }
+            "ref-align" => {
+                self.ref_align = match self.ref_align {
+                    RefAlign::Left => RefAlign::Right,
+                    RefAlign::Right => RefAlign::Left,
+                };
+            }
             "export-config" => {
                 self.export_repo_config(cx);
                 return;
@@ -2091,10 +2325,28 @@ impl GraphView {
         let Some(sha) = self.detail_sha.clone() else {
             return;
         };
+        let compare_sha = self
+            .compare
+            .and_then(|index| self.commits.get(index))
+            .map(|commit| commit.sha.clone());
         if let Some(repo) = self.active_repo() {
-            let text = git::file_diff(&repo.path, &sha, path);
+            let (text, title) = match compare_sha {
+                Some(from) => (
+                    git::compare_file_diff(&repo.path, &from, &sha, path),
+                    format!(
+                        "{}..{} — {}",
+                        &from[..from.len().min(8)],
+                        &sha[..sha.len().min(8)],
+                        path
+                    ),
+                ),
+                None => (
+                    git::file_diff(&repo.path, &sha, path),
+                    format!("{} — {}", &sha[..sha.len().min(8)], path),
+                ),
+            };
             self.diff = Some(DiffView {
-                title: format!("{} — {}", &sha[..sha.len().min(8)], path),
+                title,
                 text: Arc::new(text),
             });
             cx.notify();
@@ -2138,6 +2390,16 @@ impl GraphView {
         }
         .unwrap_or_else(|| "Hover a commit to see its refs".to_string());
 
+        let text = if !self.search_query.is_empty() && !self.matches.is_empty() {
+            format!(
+                "{text}   ·   match {}/{}  (⌘G / ⇧⌘G)",
+                self.match_cursor + 1,
+                self.matches.len()
+            )
+        } else {
+            text
+        };
+
         div()
             .w_full()
             .px_3()
@@ -2171,6 +2433,9 @@ struct RowRenderContext {
     date_width: f32,
     author_width: f32,
     commit_width: f32,
+    ref_align: RefAlign,
+    matches: Arc<Vec<usize>>,
+    match_cursor: usize,
 }
 
 impl RowRenderContext {
@@ -2301,11 +2566,9 @@ impl RowRenderContext {
         let dot_left = px(commit.lane as f32 * LANE_WIDTH + (LANE_WIDTH - DOT_SIZE) / 2.0);
         let dot_top = px((ROW_HEIGHT - DOT_SIZE) / 2.0);
 
-        let ref_names = if self.combine_refs {
-            combine_refs(&commit.refs)
-        } else {
-            commit.refs.clone()
-        };
+        let ref_names = format_refs(&commit.refs, self.combine_refs, self.ref_align);
+        let is_current_match = self.matches.get(self.match_cursor) == Some(&index);
+        let is_match = self.matches.contains(&index);
         let refs = if ref_names.is_empty() {
             String::new()
         } else {
@@ -2328,6 +2591,8 @@ impl RowRenderContext {
             .items_center()
             .when(is_selected, |this| this.bg(theme.selected))
             .when(is_compare, |this| this.bg(theme.hover))
+            .when(is_current_match, |this| this.bg(theme.selected))
+            .when(is_match && !is_current_match, |this| this.bg(theme.hover))
             .on_hover(move |hovered, _window, cx| {
                 let target = if *hovered { Some(index) } else { None };
                 weak_hover
@@ -2660,5 +2925,72 @@ fn paint_lanes(window: &mut Window, bounds: Bounds<Pixels>, commit: &Commit, col
         } {
             window.paint_path(path, color);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn commit(sha: &str, subject: &str, author: &str) -> Commit {
+        Commit {
+            sha: sha.to_string(),
+            parents: Vec::new(),
+            refs: Vec::new(),
+            author: author.to_string(),
+            timestamp: 0,
+            commit_timestamp: 0,
+            author_date: String::new(),
+            commit_date: String::new(),
+            subject: subject.to_string(),
+            lane: 0,
+            through: Vec::new(),
+            incoming: Vec::new(),
+            outgoing: Vec::new(),
+            top_line: false,
+            bottom_line: false,
+        }
+    }
+
+    #[test]
+    fn format_refs_combines_and_aligns() {
+        let refs = vec![
+            "main".to_string(),
+            "origin/main".to_string(),
+            "v1".to_string(),
+        ];
+        assert_eq!(format_refs(&refs, false, RefAlign::Left), refs);
+        assert_eq!(
+            format_refs(&refs, true, RefAlign::Left),
+            vec!["main".to_string(), "v1".to_string()]
+        );
+        assert_eq!(
+            format_refs(&refs, false, RefAlign::Right),
+            vec![
+                "v1".to_string(),
+                "origin/main".to_string(),
+                "main".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn command_filter_matches_case_insensitively() {
+        assert_eq!(filter_commands("").len(), COMMANDS.len());
+        let filtered = filter_commands("push");
+        assert!(filtered.iter().any(|(label, _)| *label == "Push branch"));
+        assert!(filter_commands("zzz").is_empty());
+    }
+
+    #[test]
+    fn find_matches_by_subject_author_and_sha() {
+        let commits = vec![
+            commit("abc123", "Fix SEO", "Sen"),
+            commit("def456", "Add graph", "Alice"),
+        ];
+        assert_eq!(find_matches(&commits, "seo"), vec![0]);
+        assert_eq!(find_matches(&commits, "alice"), vec![1]);
+        assert_eq!(find_matches(&commits, "abc"), vec![0]);
+        assert!(find_matches(&commits, "").is_empty());
     }
 }

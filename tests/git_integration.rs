@@ -131,6 +131,29 @@ fn commit_detail_reports_changed_files() {
 }
 
 #[test]
+fn compare_and_diff_between_commits() {
+    let repo = TempRepo::new("compare");
+    repo.commit("a.txt", "one\n", "one");
+    let first = git::log(&repo.path, 1, &LogFilter::default()).unwrap()[0]
+        .sha
+        .clone();
+
+    repo.commit("a.txt", "one\ntwo\n", "two");
+    let second = git::log(&repo.path, 1, &LogFilter::default()).unwrap()[0]
+        .sha
+        .clone();
+
+    let files = git::compare_files(&repo.path, &first, &second);
+    assert!(files.iter().any(|file| file.path == "a.txt"));
+
+    let diff = git::compare_file_diff(&repo.path, &first, &second, "a.txt");
+    assert!(diff.contains("+two"), "diff was: {diff}");
+
+    // Unsigned commits report no signature.
+    assert_eq!(git::signature_status(&repo.path, &second), None);
+}
+
+#[test]
 fn remotes_are_readable() {
     let repo = TempRepo::new("remote");
     repo.commit("a.txt", "1\n", "one");
