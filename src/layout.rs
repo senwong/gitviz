@@ -277,6 +277,30 @@ mod tests {
     }
 
     #[test]
+    fn criss_cross_history_reuses_lanes() {
+        let mut commits = vec![
+            commit("A", &["B", "C"]),
+            commit("B", &["D"]),
+            commit("C", &["D"]),
+            commit("D", &[]),
+        ];
+        let lanes = assign_lanes(&mut commits);
+        assert_eq!(lanes, 2);
+
+        let by_sha = |sha: &str| commits.iter().find(|c| c.sha == sha).unwrap();
+        assert_eq!(by_sha("A").lane, 0);
+        assert_eq!(by_sha("A").outgoing, vec![1]);
+        assert_eq!(by_sha("B").lane, 0);
+        assert_eq!(by_sha("B").through, vec![1]);
+        assert_eq!(by_sha("C").lane, 1);
+        assert_eq!(by_sha("C").through, vec![0]);
+        assert_eq!(by_sha("D").lane, 0);
+        assert_eq!(by_sha("D").incoming, vec![1]);
+        // D is the root and closes both lanes, so nothing passes through.
+        assert!(by_sha("D").through.is_empty());
+    }
+
+    #[test]
     fn graph_style_round_trips_through_strings() {
         assert_eq!(GraphStyle::parse("angular"), GraphStyle::Angular);
         assert_eq!(GraphStyle::parse("Angular"), GraphStyle::Angular);

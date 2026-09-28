@@ -126,4 +126,13 @@ mod tests {
         assert_eq!(replace_shortcodes("10:30 met"), "10:30 met");
         assert_eq!(replace_shortcodes("no colons"), "no colons");
     }
+
+    #[test]
+    fn custom_mappings_override_builtins_and_chain() {
+        let custom = vec![
+            ("bug".to_string(), "🐞".to_string()),
+            ("party".to_string(), "🎉".to_string()),
+        ];
+        assert_eq!(replace_with(":bug: and :party:", &custom), "🐞 and 🎉");
+    }
 }
