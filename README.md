@@ -49,12 +49,18 @@ cd ~/projects/gitviz
 
 | 快捷键 | 作用 |
 | --- | --- |
-| `⌘P` | 打开/关闭仓库命令面板 |
-| `↑` / `↓` | 在面板中移动选择 |
-| `Enter` | 切换到选中的仓库 |
-| `Esc` | 关闭面板 |
-| `⌘R` | 重新加载当前仓库的提交 |
-| `⌘Q` | 退出 |
+| `⌘P` | 打开/关闭仓库面板 |
+| `⇧⌘P` | 打开/关闭命令面板 |
+| `⌘F` | 打开/关闭查找 |
+| `⌘G` / `⇧⌘G` | 跳到下一个 / 上一个匹配 |
+| `⌘R` | 重新加载当前仓库（`git log`） |
+| `⌘H` | 滚动到 HEAD |
+| `⌘S` / `⇧⌘S` | 跳到下一个 / 上一个 stash |
+| `⌘T` | 切换深浅主题 |
+| `⌘↑` / `⌘↓` | 跳到同分支的父 / 子提交（按住 `⇧` 走替代分支） |
+| `↑` / `↓` | 上下选择提交 |
+| `⌘`/`Ctrl` + 点击 | 进入提交对比（选中 Uncommitted 时为工作区↔提交对比） |
+| `Enter` / `Esc` | 提交对话框 / 关闭面板、菜单、diff |
 
 ## 目录结构
 
@@ -69,21 +75,16 @@ script/build       cargo 包装脚本
 
 ## 状态与已知限制
 
-- **这是第一版脚手架，尚未编译验证。** 首次 `cargo check` 可能需要修正若干
-  `gpui` API 细节（元素方法名、`KeyDownEvent` 字段、`cx.quit()` 等）。
-- 目前只画每一行的着色圆点，**还没有 lane 之间的连线**。
-- 没有提交详情 / diff 面板。
-- 没有写操作（checkout、cherry-pick、merge、rebase、push 等）。
-- 没有主题切换（目前是固定深色配色）。
+- **尚未编译验证。** 代码是先按功能成批写完的，第一次 `cargo check` / `test` 仍可能
+  需要修正若干 `gpui` API 细节（元素方法名、`KeyDownEvent` 字段、canvas/paint API、颜色类型等）。
+- 已实现：lane 连线（rounded / angular）、提交详情与 diff、写操作（checkout / cherry-pick /
+  merge / rebase / reset / revert / drop / push / fetch / pull / tag / stash）、
+  过滤器与搜索、深浅主题、代码审查、多仓库等（见下方“功能对齐”清单）。
 
 ## 路线图
 
-1. 编译跑通并修掉第一版的问题
-2. lane 连线（canvas 绘制父子连线与 merge 曲线）
-3. 提交详情面板（提交信息、改动文件、diff）
-4. 右键操作（cherry-pick / revert / merge / rebase / checkout / push）
-5. 过滤器（local/remote/tags/first-parent）与搜索
-6. 主题与浅色模式
+1. 编译跑通并修掉遗留问题（`./script/build check` → `./script/build test`）
+2. 按下方“功能对齐 mhutchie/vscode-git-graph”清单继续补齐细节
 
 ## 功能对齐 mhutchie/vscode-git-graph
 
@@ -134,7 +135,7 @@ script/build       cargo 包装脚本
   - [x] 配置导出到仓库文件（.gitviz.conf）
 - 键盘快捷键
   - [x] Cmd+F / Cmd+R / Cmd+S(shift) / Cmd+H / Up/Down / Enter / Esc
-  - [~] ⌘↑/⌘↓ 同分支父子跳转已做；Shift 变体（沿替代分支）待做
+  - [x] ⌘↑/⌘↓ 同分支父子跳转；⇧ 变体（沿替代分支）
 - 列与外观
   - [x] Date / Author / Commit 列显示开关（设置面板）；短日期 / 相对日期（“3 days ago”）
   - [x] 深浅主题切换
