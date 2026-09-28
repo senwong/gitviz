@@ -2768,23 +2768,44 @@ impl GraphView {
             )
             .when(!body.is_empty(), |this| this.child(self.render_message(&body)))
             .child(self.render_tags(&sha, weak.clone()))
-            .child(self.render_detail_actions(&sha, weak))
-            .child(
-                div()
+            .child(self.render_detail_actions(&sha, weak.clone()))
+            .child({
+                let weak_tree = weak.clone();
+                let theme_row = theme.clone();
+                h_flex()
                     .w_full()
                     .px_3()
                     .pt_2()
                     .pb_1()
-                    .text_sm()
-                    .text_color(theme.text_muted)
+                    .gap_2()
+                    .items_center()
                     .border_t_1()
                     .border_color(theme.border)
-                    .child(if files.len() == 1 {
-                        "1 file changed".to_string()
-                    } else {
-                        format!("{} files changed", files.len())
-                    }),
-            )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.text_muted)
+                            .child(if files.len() == 1 {
+                                "1 file changed".to_string()
+                            } else {
+                                format!("{} files changed", files.len())
+                            }),
+                    )
+                    .child(div().flex_1())
+                    .child(action_button(
+                        "toggle-file-tree",
+                        if self.file_tree { "List" } else { "Tree" },
+                        &theme_row,
+                        move |cx| {
+                            weak_tree
+                                .update(cx, |this, cx| {
+                                    this.file_tree = !this.file_tree;
+                                    cx.notify();
+                                })
+                                .ok();
+                        },
+                    ))
+            })
             .child(
                 v_flex()
                     .id("detail-file-list")
