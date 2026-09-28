@@ -490,3 +490,41 @@ fn pulls_from_a_remote() {
 
     let _ = std::fs::remove_dir_all(&bare);
 }
+
+#[test]
+fn manages_remotes_and_default_branch() {
+    let repo = TempRepo::new("manageremotes");
+    repo.commit("a.txt", "1\n", "one");
+
+    assert_eq!(git::default_branch(&repo.path).as_deref(), Some("main"));
+
+    git::add_remote(&repo.path, "origin", "https://github.com/acme/widget.git").unwrap();
+    assert_eq!(
+        git::remote_url(&repo.path, "origin").as_deref(),
+        Some("https://github.com/acme/widget.git")
+    );
+
+    git::remove_remote(&repo.path, "origin").unwrap();
+    // Note: a global `includeIf` may leave `remote.origin.fetch` behind, so we
+    // assert the URL is gone rather than that no remote config remains.
+    assert_eq!(git::remote_url(&repo.path, "origin"), None);
+}
+
+#[test]
+fn tag_details_only_include_annotated_tags() {
+    let repo = TempRepo::new("tagdetails");
+    repo.commit("a.txt", "1\n", "one");
+    let head = git::log(&repo.path, 1, &LogFilter::default()).unwrap()[0]
+        .sha
+        .clone();
+
+    git::create_tag(&repo.path, "light", &head).unwrap();
+    git::create_annotated_tag(&repo.path, "heavy", &head, "annotated").unwrap();
+
+    let names: Vec<String> = git::tags_with_details(&repo.path)
+        .into_iter()
+        .map(|tag| tag.name)
+        .collect();
+    assert!(names.iter().any(|name| name == "heavy"));
+    assert!(!names.iter().any(|name| name == "light"));
+}
