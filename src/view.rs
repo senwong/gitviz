@@ -15,8 +15,13 @@ use gpui::{
 };
 
 use crate::discovery::Repo;
-use crate::git::{self, ChangedFile, Commit, CommitDetail, LogFilter, ResetMode, StashEntry, StatusEntry};
+use crate::emoji;
+use crate::git::{
+    self, ChangedFile, Commit, CommitDetail, LogFilter, RemoteInfo, ResetMode, StashEntry,
+    StatusEntry,
+};
 use crate::layout;
+use crate::markdown::{self, SpanStyle};
 use crate::theme::Theme;
 
 const COMMIT_LIMIT: usize = 2000;
@@ -80,8 +85,23 @@ pub struct GraphView {
     settings_open: bool,
     search_active: bool,
     search_query: String,
+    emoji_enabled: bool,
+    markdown_enabled: bool,
+    combine_refs: bool,
+    use_mailmap: bool,
+    include_reflogs: bool,
+    date_mode: DateMode,
+    remotes: Vec<String>,
+    remote_info: Option<RemoteInfo>,
+    signature: Option<char>,
     theme: Theme,
     focus_handle: FocusHandle,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DateMode {
+    Author,
+    Commit,
 }
 
 #[derive(Default)]
@@ -102,6 +122,7 @@ struct Prompt {
 enum PromptAction {
     CreateBranch,
     CreateTag,
+    AddRemote,
 }
 
 struct DiffView {
@@ -202,6 +223,8 @@ impl GraphView {
                 remotes: true,
                 tags: true,
                 first_parent: false,
+                use_mailmap: false,
+                include_reflogs: false,
             },
             show_stashes: true,
             show_uncommitted: true,
@@ -215,6 +238,15 @@ impl GraphView {
             settings_open: false,
             search_active: false,
             search_query: String::new(),
+            emoji_enabled: true,
+            markdown_enabled: true,
+            combine_refs: true,
+            use_mailmap: false,
+            include_reflogs: false,
+            date_mode: DateMode::Author,
+            remotes: Vec::new(),
+            remote_info: None,
+            signature: None,
             theme: Theme::dark(),
             focus_handle,
         };
@@ -243,8 +275,13 @@ impl GraphView {
         };
 
         self.branch = git::head_branch(&repo.path);
+        self.signature = None;
         self.head_ancestors = git::head_ancestors(&repo.path, 50_000);
         self.branch_filter.all = git::local_branches(&repo.path);
+        self.remotes = git::remotes(&repo.path);
+        self.remote_info = git::hosting_remote(&repo.path);
+        self.filter.use_mailmap = self.use_mailmap;
+        self.filter.include_reflogs = self.include_reflogs;
         if self.show_uncommitted {
             self.status = git::status(&repo.path, self.include_untracked);
         }
@@ -252,7 +289,7 @@ impl GraphView {
             self.stashes = git::stashes(&repo.path);
         }
 
-        match git::log(&repo.path, COMMIT_LIMIT, &self.filter) {
+        match git::log(&repo.path, self.loaded, &self.filter) {
             Ok(mut commits) => {
                 layout::assign_lanes(&mut commits);
                 self.commits = commits;
@@ -327,13 +364,14 @@ impl GraphView {
         };
         let sha = commit.sha.clone();
         self.detail_sha = Some(sha.clone());
-        if let Some(repo) = self.active_repo() {
+        if let Some(repo) = self.active_repo().cloned() {
             if let Some(compare) = self.compare.and_then(|index| self.commits.get(index)) {
                 let compare_sha = compare.sha.clone();
                 self.compare_files = git::compare_files(&repo.path, &compare_sha, &sha);
             } else {
                 self.detail = git::commit_detail(&repo.path, &sha).ok();
             }
+            self.signature = git::signature_status(&repo.path, &sha);
         }
         cx.notify();
     }
@@ -618,6 +656,14 @@ impl GraphView {
             PromptAction::CreateTag => {
                 self.run_op(move |repo| git::create_tag(&repo.path, &name, &sha), cx)
             }
+            PromptAction::AddRemote => {
+                let mut parts = name.split_whitespace();
+                if let (Some(remote_name), Some(url)) = (parts.next(), parts.next()) {
+                    let remote_name = remote_name.to_string();
+                    let url = url.to_string();
+                    self.run_op(move |repo| git::add_remote(&repo.path, &remote_name, &url), cx);
+                }
+            }
         }
     }
 
@@ -805,6 +851,8 @@ impl Render for GraphView {
             .child(chip("Find", self.search_active, "find", weak.clone(), theme.clone()))
             .child(chip("Refresh", false, "refresh", weak.clone(), theme.clone()))
             .child(chip("Push", false, "push", weak.clone(), theme.clone()))
+            .child(chip("PR", false, "pr", weak.clone(), theme.clone()))
+            .child(chip("Load more", false, "load-more", weak.clone(), theme.clone()))
             .child(chip("Theme", false, "theme", weak, theme.clone()));
 
         let search_bar = self.search_active.then(|| {
@@ -834,7 +882,10 @@ impl Render for GraphView {
             compare: self.compare,
             head_ancestors: self.head_ancestors.clone(),
             theme: theme.clone(),
-            loaded: self.loaded,
+            emoji_enabled: self.emoji_enabled,
+            combine_refs: self.combine_refs,
+            columns: self.columns,
+            date_mode: self.date_mode,
         };
 
         let body: AnyElement = if let Some(error) = &self.error {
@@ -929,6 +980,25 @@ impl GraphView {
             }
             "refresh" => self.run_op(|repo| git::fetch_all_tags(&repo.path), cx),
             "push" => self.run_op(|repo| git::push_current_branch(&repo.path), cx),
+            "pr" => {
+                let branch = self.branch.clone().unwrap_or_default();
+                let base = self
+                    .active_repo()
+                    .and_then(|repo| git::default_branch(&repo.path))
+                    .unwrap_or_else(|| "main".to_string());
+                if let Some(info) = self.remote_info.clone() {
+                    let url = info.pr_url(
+                        &base,
+                        &branch,
+                        &format!("Merge {branch} into {base}"),
+                    );
+                    let _ = git::open_url(&url);
+                }
+            }
+            "load-more" => {
+                self.loaded = (self.loaded + 500).min(COMMIT_LIMIT);
+                self.load(cx);
+            }
             "theme" => {
                 self.theme = self.theme.toggled();
                 cx.notify();
@@ -989,17 +1059,16 @@ impl GraphView {
                     .py_1()
                     .text_sm()
                     .text_color(theme.text_muted)
-                    .child(format!("{} <{}>", detail.author, detail.email)),
+                    .child({
+                        let mut meta = format!("{} <{}>", detail.author, detail.email);
+                        if let Some(signature) = self.signature {
+                            meta.push_str(&format!("  ·  signature {signature}"));
+                        }
+                        meta
+                    }),
             )
-            .child(
-                div()
-                    .w_full()
-                    .px_3()
-                    .py_2()
-                    .text_sm()
-                    .text_color(theme.text)
-                    .child(detail.message.clone()),
-            )
+            .child(self.render_message(&detail.message))
+            .child(self.render_detail_actions(&sha, weak))
             .child(
                 div()
                     .w_full()
@@ -1010,6 +1079,123 @@ impl GraphView {
                     .child(format!("{} files changed", files.len())),
             )
             .child(v_flex().w_full().overflow_y_scroll().children(files))
+            .into_any_element()
+    }
+
+    fn render_message(&self, message: &str) -> AnyElement {
+        let theme = self.theme.clone();
+        let lines: Vec<AnyElement> = if self.markdown_enabled {
+            markdown::parse(message)
+                .into_iter()
+                .map(|spans| {
+                    let spans: Vec<AnyElement> = spans
+                        .into_iter()
+                        .map(|span| {
+                            let text = if self.emoji_enabled {
+                                emoji::replace_shortcodes(&span.text)
+                            } else {
+                                span.text
+                            };
+                            span_element(text, span.style, &theme)
+                        })
+                        .collect();
+                    h_flex().flex_wrap().children(spans).into_any_element()
+                })
+                .collect()
+        } else {
+            message
+                .lines()
+                .map(|line| {
+                    let text = if self.emoji_enabled {
+                        emoji::replace_shortcodes(line)
+                    } else {
+                        line.to_string()
+                    };
+                    div()
+                        .text_sm()
+                        .text_color(theme.text)
+                        .child(text)
+                        .into_any_element()
+                })
+                .collect()
+        };
+        v_flex()
+            .w_full()
+            .px_3()
+            .py_1()
+            .gap_0p5()
+            .children(lines)
+            .into_any_element()
+    }
+
+    fn render_detail_actions(&self, sha: &str, _weak: gpui::WeakEntity<Self>) -> AnyElement {
+        let theme = self.theme.clone();
+        let sha_string = sha.to_string();
+        let message = self
+            .detail
+            .as_ref()
+            .map(|detail| detail.message.clone())
+            .unwrap_or_default();
+        let remote = self.remote_info.clone();
+        let branch = self.branch.clone().unwrap_or_default();
+        let mut buttons: Vec<AnyElement> = Vec::new();
+
+        let sha_for_copy = sha_string.clone();
+        buttons.push(
+            action_button("copy-sha", "Copy SHA", &theme, move |cx| {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(sha_for_copy.clone()));
+            })
+            .into_any_element(),
+        );
+
+        let message_for_copy = message.clone();
+        buttons.push(
+            action_button("copy-message", "Copy Message", &theme, move |cx| {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(message_for_copy.clone()));
+            })
+            .into_any_element(),
+        );
+
+        if let Some(info) = remote {
+            let url = info.commit_url(&sha_string);
+            buttons.push(
+                action_button("open-remote", "Open on Remote", &theme, move |_cx| {
+                    let _ = git::open_url(&url);
+                })
+                .into_any_element(),
+            );
+            if !branch.is_empty() {
+                let base = self
+                    .active_repo()
+                    .and_then(|repo| git::default_branch(&repo.path))
+                    .unwrap_or_else(|| "main".to_string());
+                let pr = info.pr_url(&base, &branch, &format!("Merge {branch} into {base}"));
+                buttons.push(
+                    action_button("create-pr", "Create PR", &theme, move |_cx| {
+                        let _ = git::open_url(&pr);
+                    })
+                    .into_any_element(),
+                );
+            }
+            for issue in find_issues(&message) {
+                let url = info.issue_url(&issue);
+                let id = format!("issue-{issue}");
+                buttons.push(
+                    action_button(id, "Open Issue", &theme, move |_cx| {
+                        let _ = git::open_url(&url);
+                    })
+                    .into_any_element(),
+                );
+            }
+        }
+
+        h_flex()
+            .w_full()
+            .px_3()
+            .py_1()
+            .gap_2()
+            .flex_wrap()
+            .children(buttons)
             .into_any_element()
     }
 
@@ -1163,16 +1349,28 @@ impl GraphView {
 
     fn render_settings(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
         let theme = self.theme.clone();
-        let mut items: Vec<AnyElement> = Vec::new();
-        for (label, on, id) in [
+        let date_label = match self.date_mode {
+            DateMode::Author => "Show author dates",
+            DateMode::Commit => "Show commit dates",
+        };
+        let toggles = [
             ("Date column", self.columns.date, "col-date"),
             ("Author column", self.columns.author, "col-author"),
             ("Commit column", self.columns.commit, "col-commit"),
             ("Include untracked files", self.include_untracked, "untracked"),
-        ] {
-            let weak = weak.clone();
-            let theme = theme.clone();
-            items.push(
+            ("Emoji shortcodes", self.emoji_enabled, "emoji"),
+            ("Markdown in messages", self.markdown_enabled, "markdown"),
+            ("Combine local + remote refs", self.combine_refs, "combine"),
+            (date_label, self.date_mode == DateMode::Commit, "date"),
+            ("Respect .mailmap", self.use_mailmap, "mailmap"),
+            ("Include reflog commits", self.include_reflogs, "reflogs"),
+        ];
+
+        let mut items: Vec<AnyElement> = toggles
+            .into_iter()
+            .map(|(label, on, id)| {
+                let weak = weak.clone();
+                let theme = theme.clone();
                 h_flex()
                     .id(id)
                     .w_full()
@@ -1189,10 +1387,121 @@ impl GraphView {
                             .child(if on { "[x]" } else { "[ ]" }),
                     )
                     .child(div().text_color(theme.text).child(label))
+                    .into_any_element()
+            })
+            .collect();
+
+        items.push(
+            div()
+                .w_full()
+                .px_3()
+                .pt_2()
+                .pb_1()
+                .text_sm()
+                .text_color(theme.text_muted)
+                .border_t_1()
+                .border_color(theme.border)
+                .child("Remotes")
+                .into_any_element(),
+        );
+
+        for name in &self.remotes {
+            let weak_fetch = weak.clone();
+            let weak_prune = weak.clone();
+            let weak_remove = weak.clone();
+            let theme_row = theme.clone();
+            let name_fetch = name.clone();
+            let name_prune = name.clone();
+            let name_remove = name.clone();
+            items.push(
+                h_flex()
+                    .id(format!("remote-{}", name))
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .gap_2()
+                    .child(div().flex_1().text_color(theme.text).child(name.clone()))
+                    .child(action_button(
+                        format!("remote-fetch-{name}"),
+                        "Fetch",
+                        &theme_row,
+                        move |cx| {
+                            weak_fetch
+                                .update(cx, |this, cx| {
+                                    this.run_op(
+                                        move |repo| git::fetch_remote(&repo.path, &name_fetch),
+                                        cx,
+                                    )
+                                })
+                                .ok();
+                        },
+                    ))
+                    .child(action_button(
+                        format!("remote-prune-{name}"),
+                        "Prune",
+                        &theme_row,
+                        move |cx| {
+                            weak_prune
+                                .update(cx, |this, cx| {
+                                    this.run_op(
+                                        move |repo| git::prune_remote(&repo.path, &name_prune),
+                                        cx,
+                                    )
+                                })
+                                .ok();
+                        },
+                    ))
+                    .child(action_button(
+                        format!("remote-remove-{name}"),
+                        "Remove",
+                        &theme_row,
+                        move |cx| {
+                            weak_remove
+                                .update(cx, |this, cx| {
+                                    this.run_op(
+                                        move |repo| git::remove_remote(&repo.path, &name_remove),
+                                        cx,
+                                    )
+                                })
+                                .ok();
+                        },
+                    ))
                     .into_any_element(),
             );
         }
-        overlay(theme.clone(), 140., 420., vec![
+
+        let weak_add = weak.clone();
+        let theme_add = theme.clone();
+        items.push(
+            h_flex()
+                .id("add-remote")
+                .w_full()
+                .px_3()
+                .py_1()
+                .gap_2()
+                .on_click(move |_: &ClickEvent, window, cx| {
+                    let _ = window;
+                    weak_add
+                        .update(cx, |this, cx| {
+                            this.prompt = Some(Prompt {
+                                title: "Add remote (name url)".to_string(),
+                                input: String::new(),
+                                action: PromptAction::AddRemote,
+                                sha: String::new(),
+                            });
+                            cx.notify();
+                        })
+                        .ok();
+                })
+                .child(
+                    div()
+                        .text_color(theme_add.accent)
+                        .child("+ Add remote…"),
+                )
+                .into_any_element(),
+        );
+
+        overlay(theme.clone(), 100., 460., vec![
             div()
                 .w_full()
                 .px_3()
@@ -1202,7 +1511,7 @@ impl GraphView {
                 .border_color(theme.border)
                 .child("Settings")
                 .into_any_element(),
-            v_flex().w_full().children(items).into_any_element(),
+            v_flex().w_full().overflow_y_scroll().children(items).into_any_element(),
         ])
     }
 
@@ -1324,10 +1633,49 @@ impl GraphView {
                 self.status = git::status(&repo.path, self.include_untracked);
                 self.rows_dirty = true;
             }
+            "emoji" => self.emoji_enabled = !self.emoji_enabled,
+            "markdown" => self.markdown_enabled = !self.markdown_enabled,
+            "combine" => self.combine_refs = !self.combine_refs,
+            "date" => {
+                self.date_mode = match self.date_mode {
+                    DateMode::Author => DateMode::Commit,
+                    DateMode::Commit => DateMode::Author,
+                }
+            }
+            "mailmap" => {
+                self.use_mailmap = !self.use_mailmap;
+                self.load(cx);
+                return;
+            }
+            "reflogs" => {
+                self.include_reflogs = !self.include_reflogs;
+                self.load(cx);
+                return;
+            }
             _ => {}
         }
         cx.notify();
     }
+}
+
+fn action_button(
+    id: impl Into<gpui::ElementId>,
+    label: &'static str,
+    theme: &Theme,
+    handler: impl Fn(&mut App) + 'static,
+) -> impl IntoElement {
+    let hover_color = theme.hover;
+    let text_color = theme.text_muted;
+    div()
+        .id(id)
+        .px_2()
+        .py_0p5()
+        .rounded_md()
+        .text_sm()
+        .text_color(text_color)
+        .hover(move |this| this.bg(hover_color))
+        .on_click(move |_: &ClickEvent, _window, cx| handler(cx))
+        .child(label)
 }
 
 fn overlay(theme: Theme, top: f32, width: f32, children: Vec<AnyElement>) -> AnyElement {
@@ -1441,7 +1789,10 @@ struct RowRenderContext {
     compare: Option<usize>,
     head_ancestors: HashSet<String>,
     theme: Theme,
-    loaded: usize,
+    emoji_enabled: bool,
+    combine_refs: bool,
+    columns: Columns,
+    date_mode: DateMode,
 }
 
 impl RowRenderContext {
@@ -1571,10 +1922,24 @@ impl RowRenderContext {
         let dot_left = px(commit.lane as f32 * LANE_WIDTH + (LANE_WIDTH - DOT_SIZE) / 2.0);
         let dot_top = px((ROW_HEIGHT - DOT_SIZE) / 2.0);
 
-        let refs = if commit.refs.is_empty() {
+        let ref_names = if self.combine_refs {
+            combine_refs(&commit.refs)
+        } else {
+            commit.refs.clone()
+        };
+        let refs = if ref_names.is_empty() {
             String::new()
         } else {
-            format!("[{}] ", commit.refs.join(", "))
+            format!("[{}] ", ref_names.join(", "))
+        };
+        let subject = if self.emoji_enabled {
+            emoji::replace_shortcodes(&commit.subject)
+        } else {
+            commit.subject.clone()
+        };
+        let date = match self.date_mode {
+            DateMode::Author => commit.author_date.clone(),
+            DateMode::Commit => commit.commit_date.clone(),
         };
 
         h_flex()
@@ -1626,13 +1991,86 @@ impl RowRenderContext {
                     .truncate()
                     .text_sm()
                     .text_color(if is_ancestor { theme.text } else { theme.text_muted })
-                    .child(format!("{}{}  {}", refs, commit.short_sha(), commit.subject)),
+                    .child(format!("{}{}  {}", refs, commit.short_sha(), subject)),
             )
+            .when(self.columns.date, |this| this.child(column_cell(&date, theme, 150.)))
+            .when(self.columns.author, |this| {
+                this.child(column_cell(&commit.author, theme, 130.))
+            })
+            .when(self.columns.commit, |this| {
+                this.child(column_cell(commit.short_sha(), theme, 80.))
+            })
             .into_any_element()
     }
 }
 
 const LAYER_PREFIX: f32 = 24.0;
+
+fn combine_refs(refs: &[String]) -> Vec<String> {
+    let locals: HashSet<&str> = refs.iter().map(String::as_str).collect();
+    refs.iter()
+        .filter(|name| match name.split_once('/') {
+            Some((_, rest)) => !locals.contains(rest),
+            None => true,
+        })
+        .cloned()
+        .collect()
+}
+
+fn column_cell(text: &str, theme: &Theme, width: f32) -> AnyElement {
+    div()
+        .w(px(width))
+        .truncate()
+        .text_sm()
+        .text_color(theme.text_muted)
+        .child(text.to_string())
+        .into_any_element()
+}
+
+fn span_element(text: String, style: SpanStyle, theme: &Theme) -> AnyElement {
+    let element = match style {
+        SpanStyle::Normal => div().text_sm().text_color(theme.text),
+        SpanStyle::Bold => div()
+            .text_sm()
+            .text_color(theme.text)
+            .font_weight(gpui::FontWeight::BOLD),
+        SpanStyle::Italic => div().text_sm().text_color(theme.text).italic(),
+        SpanStyle::BoldItalic => div()
+            .text_sm()
+            .text_color(theme.text)
+            .font_weight(gpui::FontWeight::BOLD)
+            .italic(),
+        SpanStyle::Code => div()
+            .text_sm()
+            .text_color(theme.accent)
+            .bg(theme.hover)
+            .px_1()
+            .rounded_md(),
+    };
+    element.child(text).into_any_element()
+}
+
+fn find_issues(message: &str) -> Vec<String> {
+    let mut issues = Vec::new();
+    let mut chars = message.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '#' {
+            let mut number = String::new();
+            while let Some(&next) = chars.peek() {
+                if next.is_ascii_digit() {
+                    number.push(next);
+                    chars.next();
+                } else {
+                    break;
+                }
+            }
+            if !number.is_empty() {
+                issues.push(number);
+            }
+        }
+    }
+    issues
+}
 
 fn paint_lanes(window: &mut Window, bounds: Bounds<Pixels>, commit: &Commit, colors: &[gpui::Rgba; 8]) {
     let x = |lane: usize| bounds.origin.x + px(lane as f32 * LANE_WIDTH + LANE_WIDTH / 2.0);

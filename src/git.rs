@@ -15,6 +15,9 @@ pub struct Commit {
     pub refs: Vec<String>,
     pub author: String,
     pub timestamp: i64,
+    pub commit_timestamp: i64,
+    pub author_date: String,
+    pub commit_date: String,
     pub subject: String,
     /// Assigned by [`crate::layout::assign_lanes`].
     pub lane: usize,
@@ -43,6 +46,8 @@ pub struct LogFilter {
     pub remotes: bool,
     pub tags: bool,
     pub first_parent: bool,
+    pub use_mailmap: bool,
+    pub include_reflogs: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -94,11 +99,23 @@ pub fn head_branch(repo: &Path) -> Option<String> {
 /// Loads up to `limit` commits, newest first, in date order.
 pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<Commit>> {
     let format = format!(
-        "--format=%H{RECORD_SEP}%P{RECORD_SEP}%D{RECORD_SEP}%an{RECORD_SEP}%at{RECORD_SEP}%s"
+        "--format=%H{RECORD_SEP}%P{RECORD_SEP}%D{RECORD_SEP}%an{RECORD_SEP}%at{RECORD_SEP}%ct{RECORD_SEP}%ad{RECORD_SEP}%cd{RECORD_SEP}%s"
     );
     let limit_arg = format!("-n{limit}");
 
-    let mut args: Vec<String> = vec!["log".into(), "--date-order".into(), limit_arg, format];
+    let mut args: Vec<String> = vec![
+        "log".into(),
+        "--date-order".into(),
+        "--date=iso".into(),
+        limit_arg,
+        format,
+    ];
+    if filter.use_mailmap {
+        args.push("--use-mailmap".into());
+    }
+    if filter.include_reflogs {
+        args.push("--reflog".into());
+    }
     if filter.first_parent {
         args.push("--first-parent".into());
     }
@@ -138,6 +155,9 @@ pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<
             .collect();
         let author = fields.next().unwrap_or_default().to_string();
         let timestamp = fields.next().unwrap_or("0").parse().unwrap_or(0);
+        let commit_timestamp = fields.next().unwrap_or("0").parse().unwrap_or(0);
+        let author_date = fields.next().unwrap_or_default().to_string();
+        let commit_date = fields.next().unwrap_or_default().to_string();
         let subject = fields.next().unwrap_or_default().to_string();
         commits.push(Commit {
             sha,
@@ -145,6 +165,9 @@ pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<
             refs,
             author,
             timestamp,
+            commit_timestamp,
+            author_date,
+            commit_date,
             subject,
             lane: 0,
             through: Vec::new(),
@@ -389,6 +412,191 @@ pub fn stash_pop(repo: &Path, index: usize) -> anyhow::Result<()> {
 
 pub fn stash_drop(repo: &Path, index: usize) -> anyhow::Result<()> {
     run(repo, &["stash", "drop", &format!("stash@{{{index}}}")]).map(|_| ())
+}
+
+pub fn stash_branch(repo: &Path, index: usize, name: &str) -> anyhow::Result<()> {
+    run(repo, &["stash", "branch", name, &format!("stash@{{{index}}}")]).map(|_| ())
+}
+
+// -- Remotes ---------------------------------------------------------------
+
+pub fn remotes(repo: &Path) -> Vec<String> {
+    run(repo, &["remote"]).map(|output| lines(&output)).unwrap_or_default()
+}
+
+pub fn remote_url(repo: &Path, name: &str) -> Option<String> {
+    run(repo, &["remote", "get-url", name])
+        .ok()
+        .map(|url| url.trim().to_string())
+        .filter(|url| !url.is_empty())
+}
+
+pub fn add_remote(repo: &Path, name: &str, url: &str) -> anyhow::Result<()> {
+    run(repo, &["remote", "add", name, url]).map(|_| ())
+}
+
+pub fn remove_remote(repo: &Path, name: &str) -> anyhow::Result<()> {
+    run(repo, &["remote", "remove", name]).map(|_| ())
+}
+
+pub fn prune_remote(repo: &Path, name: &str) -> anyhow::Result<()> {
+    run(repo, &["remote", "prune", name]).map(|_| ())
+}
+
+pub fn fetch_remote(repo: &Path, name: &str) -> anyhow::Result<()> {
+    run(repo, &["fetch", name]).map(|_| ())
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Provider {
+    GitHub,
+    GitLab,
+    Bitbucket,
+}
+
+#[derive(Clone, Debug)]
+pub struct RemoteInfo {
+    pub provider: Provider,
+    pub host: String,
+    pub owner: String,
+    pub repo: String,
+}
+
+pub fn parse_remote(url: &str) -> Option<RemoteInfo> {
+    let (host, path) = if let Some(rest) = url.strip_prefix("git@") {
+        let (host, path) = rest.split_once(':')?;
+        (host.to_string(), path.to_string())
+    } else if let Some(rest) = url.split_once("://").map(|(_, rest)| rest) {
+        let (host, path) = rest.split_once('/')?;
+        (host.to_string(), path.to_string())
+    } else {
+        return None;
+    };
+
+    let path = path.trim_end_matches(".git").to_string();
+    let mut segments = path.splitn(2, '/');
+    let owner = segments.next()?.to_string();
+    let repo = segments.next()?.to_string();
+
+    let provider = if host.contains("github") {
+        Provider::GitHub
+    } else if host.contains("gitlab") {
+        Provider::GitLab
+    } else if host.contains("bitbucket") {
+        Provider::Bitbucket
+    } else {
+        return None;
+    };
+
+    Some(RemoteInfo {
+        provider,
+        host,
+        owner,
+        repo,
+    })
+}
+
+impl RemoteInfo {
+    pub fn web_url(&self) -> String {
+        format!("https://{}/{}/{}", self.host, self.owner, self.repo)
+    }
+
+    pub fn issue_url(&self, issue: &str) -> String {
+        format!("{}/issues/{}", self.web_url(), issue)
+    }
+
+    pub fn pr_url(&self, base: &str, head: &str, description: &str) -> String {
+        let description = urlencode(description);
+        match self.provider {
+            Provider::GitHub => format!(
+                "{}/compare/{}...{}?expand=1&body={}",
+                self.web_url(),
+                base,
+                head,
+                description
+            ),
+            Provider::GitLab => format!(
+                "{}/-/merge_requests/new?merge_request[source_branch]={}&merge_request[target_branch]={}&merge_request[description]={}",
+                self.web_url(),
+                head,
+                base,
+                description
+            ),
+            Provider::Bitbucket => format!(
+                "{}/pull-requests/new?source={}&dest={}&description={}",
+                self.web_url(),
+                head,
+                base,
+                description
+            ),
+        }
+    }
+
+    pub fn commit_url(&self, sha: &str) -> String {
+        match self.provider {
+            Provider::GitHub => format!("{}/commit/{}", self.web_url(), sha),
+            Provider::GitLab => format!("{}/-/commit/{}", self.web_url(), sha),
+            Provider::Bitbucket => format!("{}/commits/{}", self.web_url(), sha),
+        }
+    }
+}
+
+fn urlencode(input: &str) -> String {
+    let mut output = String::new();
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                output.push(byte as char)
+            }
+            b' ' => output.push_str("%20"),
+            _ => output.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    output
+}
+
+pub fn open_url(url: &str) -> anyhow::Result<()> {
+    std::process::Command::new("open")
+        .arg(url)
+        .status()
+        .map(|_| ())
+        .map_err(Into::into)
+}
+
+/// First character of `git log -1 --format=%G?`, e.g. `G` for a good signature.
+pub fn signature_status(repo: &Path, sha: &str) -> Option<char> {
+    run(repo, &["log", "-1", "--format=%G?", sha])
+        .ok()?
+        .trim()
+        .chars()
+        .next()
+}
+
+pub fn default_branch(repo: &Path) -> Option<String> {
+    if let Ok(output) = run(repo, &["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]) {
+        let name = output.trim().trim_start_matches("origin/").to_string();
+        if !name.is_empty() {
+            return Some(name);
+        }
+    }
+    for candidate in ["main", "master"] {
+        if run(repo, &["show-ref", "--verify", &format!("refs/heads/{candidate}")]).is_ok() {
+            return Some(candidate.to_string());
+        }
+    }
+    None
+}
+
+/// The first remote that looks like a known hosting provider.
+pub fn hosting_remote(repo: &Path) -> Option<RemoteInfo> {
+    for name in remotes(repo) {
+        if let Some(url) = remote_url(repo, &name)
+            && let Some(info) = parse_remote(&url)
+        {
+            return Some(info);
+        }
+    }
+    None
 }
 
 pub fn checkout_commit(repo: &Path, sha: &str) -> anyhow::Result<()> {

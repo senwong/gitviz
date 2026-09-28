@@ -8,8 +8,10 @@
 //! between the discovered repositories.
 
 mod discovery;
+mod emoji;
 mod git;
 mod layout;
+mod markdown;
 mod view;
 
 use gpui::{App, Bounds, WindowBounds, WindowOptions, px, size};
