@@ -85,6 +85,8 @@ pub struct GraphView {
     custom_lane_colors: Vec<String>,
     hidden_actions: Vec<String>,
     date_short: bool,
+    resize_drag: Option<ResizeDrag>,
+    scroll_to_head_on_load: bool,
     date_width: f32,
     author_width: f32,
     commit_width: f32,
@@ -142,6 +144,19 @@ enum RepoOrder {
 enum RefAlign {
     Left,
     Right,
+}
+
+#[derive(Clone, Copy)]
+enum ResizeColumn {
+    Date,
+    Author,
+    Commit,
+}
+
+struct ResizeDrag {
+    column: ResizeColumn,
+    start_x: f32,
+    start_width: f32,
 }
 
 #[derive(Default)]
@@ -219,6 +234,13 @@ fn find_child_index(commits: &[Commit], index: usize) -> Option<usize> {
                 .iter()
                 .any(|parent| parent == &sha)
         })
+}
+
+fn find_head_commit_index(commits: &[Commit], branch: Option<&str>) -> Option<usize> {
+    let branch = branch?;
+    commits
+        .iter()
+        .position(|commit| commit.refs.iter().any(|ref_name| ref_name == branch))
 }
 
 fn find_matches(commits: &[Commit], query: &str) -> Vec<usize> {
@@ -467,6 +489,8 @@ impl GraphView {
             custom_lane_colors: Vec::new(),
             hidden_actions: Vec::new(),
             date_short: false,
+            resize_drag: None,
+            scroll_to_head_on_load: false,
             date_width: 150.,
             author_width: 130.,
             commit_width: 80.,
@@ -567,6 +591,12 @@ impl GraphView {
             Ok(mut commits) => {
                 layout::assign_lanes(&mut commits);
                 self.commits = commits;
+                if self.scroll_to_head_on_load
+                    && let Some(index) =
+                        find_head_commit_index(&self.commits, self.branch.as_deref())
+                {
+                    self.selected = Some(RowKind::Commit(index));
+                }
             }
             Err(error) => self.error = Some(error.to_string()),
         }
@@ -985,6 +1015,39 @@ impl GraphView {
     }
 
     // -- overlays ---------------------------------------------------------
+
+    fn on_mouse_move(
+        &mut self,
+        event: &gpui::MouseMoveEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((column, start_x, start_width)) = self
+            .resize_drag
+            .as_ref()
+            .map(|drag| (drag.column, drag.start_x, drag.start_width))
+        else {
+            return;
+        };
+        let width = (start_width + (event.position.x.as_f32() - start_x)).clamp(48., 480.);
+        match column {
+            ResizeColumn::Date => self.date_width = width,
+            ResizeColumn::Author => self.author_width = width,
+            ResizeColumn::Commit => self.commit_width = width,
+        }
+        cx.notify();
+    }
+
+    fn on_mouse_up(
+        &mut self,
+        _: &gpui::MouseUpEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.resize_drag.take().is_some() {
+            cx.notify();
+        }
+    }
 
     fn filtered_repos(&self) -> Vec<usize> {
         let query = self.palette.query.to_lowercase();
@@ -1479,8 +1542,11 @@ impl Render for GraphView {
             .bg(theme.bg)
             .track_focus(&self.focus_handle)
             .on_key_down(cx.listener(Self::on_key_down))
+            .on_mouse_move(cx.listener(Self::on_mouse_move))
+            .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .child(header)
             .children(search_bar)
+            .child(self.render_column_header(weak.clone()))
             .child(
                 h_flex()
                     .flex_1()
@@ -1986,6 +2052,99 @@ impl GraphView {
         ])
     }
 
+    fn render_column_header(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
+        let theme = self.theme.clone();
+        let lane_area = (self.commits.iter().map(|commit| commit.lane).max().unwrap_or(0) + 1)
+            as f32
+            * LANE_WIDTH
+            + 8.;
+
+        let handle = |column: ResizeColumn, width: f32, weak: gpui::WeakEntity<Self>| {
+            let id = match column {
+                ResizeColumn::Date => "resize-date",
+                ResizeColumn::Author => "resize-author",
+                ResizeColumn::Commit => "resize-commit",
+            };
+            div()
+                .id(id)
+                .w(px(6.))
+                .h_full()
+                .cursor_pointer()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    move |event: &MouseDownEvent, _window, cx| {
+                        let start_x = event.position.x.as_f32();
+                        weak.update(cx, |this, cx| {
+                            this.resize_drag = Some(ResizeDrag {
+                                column,
+                                start_x,
+                                start_width: width,
+                            });
+                            cx.stop_propagation();
+                            cx.notify();
+                        })
+                        .ok();
+                    },
+                )
+        };
+
+        let cell = |label: &'static str,
+                    width: f32,
+                    column: ResizeColumn,
+                    weak: gpui::WeakEntity<Self>| {
+            h_flex()
+                .w(px(width))
+                .h_full()
+                .items_center()
+                .text_sm()
+                .text_color(theme.text_muted)
+                .child(div().flex_1().truncate().child(label))
+                .child(handle(column, width, weak))
+        };
+
+        h_flex()
+            .w_full()
+            .px_2()
+            .h(px(20.))
+            .items_center()
+            .bg(theme.panel)
+            .border_b_1()
+            .border_color(theme.border)
+            .child(div().w(px(lane_area)))
+            .child(
+                div()
+                    .flex_1()
+                    .text_sm()
+                    .text_color(theme.text_muted)
+                    .child("Description"),
+            )
+            .when(self.columns.date, |this| {
+                this.child(cell(
+                    "Date",
+                    self.date_width,
+                    ResizeColumn::Date,
+                    weak.clone(),
+                ))
+            })
+            .when(self.columns.author, |this| {
+                this.child(cell(
+                    "Author",
+                    self.author_width,
+                    ResizeColumn::Author,
+                    weak.clone(),
+                ))
+            })
+            .when(self.columns.commit, |this| {
+                this.child(cell(
+                    "Commit",
+                    self.commit_width,
+                    ResizeColumn::Commit,
+                    weak.clone(),
+                ))
+            })
+            .into_any_element()
+    }
+
     fn render_palette(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
         let theme = self.theme.clone();
         let filtered = self.filtered_repos();
@@ -2228,6 +2387,7 @@ impl GraphView {
             ("Respect .mailmap", self.use_mailmap, "mailmap"),
             ("Include reflog commits", self.include_reflogs, "reflogs"),
             ("Short date format", self.date_short, "date-short"),
+            ("Scroll to HEAD on load", self.scroll_to_head_on_load, "load-scroll-head"),
             ("Show remote HEAD refs", self.show_remote_heads, "remote-heads"),
             ("Only tag commits", self.filter.only_tags, "only-tags"),
             ("Fetch: prune", self.fetch_prune, "fetch-prune"),
@@ -2596,6 +2756,7 @@ impl GraphView {
             "fetch-prune" => self.fetch_prune = !self.fetch_prune,
             "fetch-prune-tags" => self.fetch_prune_tags = !self.fetch_prune_tags,
             "date-short" => self.date_short = !self.date_short,
+            "load-scroll-head" => self.scroll_to_head_on_load = !self.scroll_to_head_on_load,
             "clear-globs" => self.branch_globs.clear(),
             "ref-align" => {
                 self.ref_align = match self.ref_align {
@@ -3603,6 +3764,15 @@ mod tests {
 
         assert_eq!(find_alt_parent_index(&commits, 0), Some(2));
         assert_eq!(find_alt_child_index(&commits, 2), Some(0));
+    }
+
+    #[test]
+    fn finds_head_commit() {
+        let mut with_ref = commit("a", "A", "x");
+        with_ref.refs = vec!["main".to_string()];
+        let commits = vec![commit("b", "B", "x"), with_ref];
+        assert_eq!(find_head_commit_index(&commits, Some("main")), Some(1));
+        assert_eq!(find_head_commit_index(&commits, None), None);
     }
 
     #[test]

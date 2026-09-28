@@ -51,6 +51,7 @@
 - 批次 12（A 项）：`.gitviz.conf` 支持 `branch_globs` 与自定义 `lane_colors`；分支按 glob 过滤、车道颜色自定义；短日期格式；命令面板“Resume last code review”；清空 globs。**新增 `parse_hex_color`/`filter_by_globs`/`format_date`/`ReviewStore::latest_commit` 单测、config 往返测试扩展**
 - 依赖调整：`gpui`/`gpui_platform` 改为 **git 依赖（固定上游 rev）**，gitviz 不再依赖任何本地仓库
 - 批次 13（A 项）：右键菜单可见性（`.gitviz.conf` 的 `hidden_actions`）、⌘⇧↑/⌘⇧↓ 替代分支导航、Gravatar 头像链接（点击打开）；新增 `md5` 依赖。**新增 `visible_actions`/`find_alt_parent_index`/`find_alt_child_index`/`gravatar_url` 单测、config 往返扩展**
+- 批次 14（A 项）：**列宽拖拽**（表头分隔条 + `on_mouse_move`/`on_mouse_up`）、**On Load 滚动到 HEAD**（`find_head_commit_index` 单测）
 
 ## 文件结构
 
