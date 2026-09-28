@@ -29,9 +29,9 @@ use crate::theme::Theme;
 
 const COMMIT_LIMIT: usize = 2000;
 const INITIAL_LOAD: usize = 300;
-const LANE_WIDTH: f32 = 14.0;
-const ROW_HEIGHT: f32 = 22.0;
-const DOT_SIZE: f32 = 8.0;
+const LANE_WIDTH: f32 = 16.0;
+const ROW_HEIGHT: f32 = 24.0;
+const DOT_SIZE: f32 = 9.0;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RowKind {
@@ -2021,15 +2021,12 @@ impl Render for GraphView {
             .child(chip("1st parent", self.filter.first_parent, "filter-first", weak.clone(), theme.clone()))
             .child(chip("Stashes", self.show_stashes, "toggle-stashes", weak.clone(), theme.clone()))
             .child(chip("Changes", self.show_uncommitted, "toggle-uncommitted", weak.clone(), theme.clone()))
+            .child(div().w(px(1.)).h(px(16.)).bg(theme.border))
             .child(chip("Branches", self.branch_filter.open, "branch-filter", weak.clone(), theme.clone()))
             .child(chip("Settings", self.settings_open, "settings", weak.clone(), theme.clone()))
             .child(chip("Find", self.search_active, "find", weak.clone(), theme.clone()))
             .child(chip("Open", false, "open-repo", weak.clone(), theme.clone()))
-            .child(chip("Refresh", false, "refresh", weak.clone(), theme.clone()))
-            .child(chip("Push", false, "push", weak.clone(), theme.clone()))
-            .child(chip("PR", false, "pr", weak.clone(), theme.clone()))
-            .child(chip("Load more", false, "load-more", weak.clone(), theme.clone()))
-            .child(chip("Theme", false, "theme", weak.clone(), theme.clone()));
+            .child(chip("Refresh", false, "refresh", weak.clone(), theme.clone()));
 
         let search_bar = self.search_active.then(|| {
             h_flex()
@@ -2550,16 +2547,30 @@ impl GraphView {
             .when(
                 !self.branches_containing.is_empty() || !self.tags_containing.is_empty(),
                 |this| {
-                    let mut parts: Vec<String> = self.branches_containing.clone();
-                    parts.extend(self.tags_containing.iter().map(|tag| format!("tag:{tag}")));
+                    let mut pills: Vec<AnyElement> = self
+                        .branches_containing
+                        .iter()
+                        .map(|branch| ref_pill(branch, &theme))
+                        .collect();
+                    pills.extend(
+                        self.tags_containing
+                            .iter()
+                            .map(|tag| ref_pill(&format!("tag: {tag}"), &theme)),
+                    );
                     this.child(
-                        div()
+                        h_flex()
                             .w_full()
                             .px_3()
                             .py_1()
-                            .text_sm()
-                            .text_color(theme.text_muted)
-                            .child(format!("contained in: {}", parts.join(", "))),
+                            .gap_1()
+                            .items_center()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme.text_muted)
+                                    .child("contained in"),
+                            )
+                            .children(pills),
                     )
                 },
             )
@@ -4626,11 +4637,21 @@ impl RowRenderContext {
 
         let is_current_match = self.matches.get(self.match_cursor) == Some(&index);
         let is_match = self.matches.contains(&index);
-        let ref_pills: Vec<AnyElement> = format_refs(&commit.refs, self.combine_refs, self.ref_align)
+        // Cap the number of ref pills so a commit with many tags does not
+        // overflow into the Date column.
+        let labels: Vec<String> = format_refs(&commit.refs, self.combine_refs, self.ref_align)
             .iter()
             .flat_map(|entry| split_ref_entry(entry))
-            .map(|label| ref_pill(&label, theme))
             .collect();
+        const MAX_PILLS: usize = 3;
+        let mut ref_pills: Vec<AnyElement> = labels
+            .iter()
+            .take(MAX_PILLS)
+            .map(|label| ref_pill(label, theme))
+            .collect();
+        if labels.len() > MAX_PILLS {
+            ref_pills.push(ref_pill(&format!("+{}", labels.len() - MAX_PILLS), theme));
+        }
         let subject = if self.emoji_enabled {
             emoji::replace_with(&commit.subject, &self.custom_emoji)
         } else {
@@ -4718,14 +4739,16 @@ impl RowRenderContext {
                     .flex_1()
                     .min_w_0()
                     .gap_1()
+                    .overflow_hidden()
                     .children(ref_pills)
                     .child(
                         div()
+                            .flex_1()
                             .min_w_0()
                             .truncate()
                             .text_sm()
                             .text_color(if is_ancestor { theme.text } else { theme.text_muted })
-                            .child(format!("{}  {}", commit.short_sha(), subject)),
+                            .child(subject),
                     ),
             )
             .when(self.columns.date, |this| {
@@ -4785,11 +4808,13 @@ fn status_entry_letter(entry: &StatusEntry) -> char {
     }
 }
 
+/// Renders a git `--date=iso` string for the Date column: the short form keeps
+/// only the date, the full form drops seconds and the timezone offset.
 fn format_date(iso: &str, short: bool) -> String {
     if short {
         iso.chars().take(10).collect()
     } else {
-        iso.to_string()
+        iso.chars().take(16).collect()
     }
 }
 
@@ -5102,6 +5127,16 @@ fn find_issues(message: &str) -> Vec<String> {
     issues
 }
 
+/// A stroke path builder with rounded line ends and joins (gpui's
+/// `PathBuilder::stroke` defaults to flat caps).
+fn rounded_stroke(width: f32) -> gpui::PathBuilder {
+    let options = gpui::StrokeOptions::default()
+        .with_line_width(width)
+        .with_line_cap(lyon::tessellation::LineCap::Round)
+        .with_line_join(lyon::tessellation::LineJoin::Round);
+    gpui::PathBuilder::stroke(px(width)).with_style(gpui::PathStyle::Stroke(options))
+}
+
 fn paint_lanes(
     window: &mut Window,
     bounds: Bounds<Pixels>,
@@ -5117,7 +5152,7 @@ fn paint_lanes(
         match segment.kind {
             layout::SegmentKind::Line { from, to } => {
                 if let Ok(path) = {
-                    let mut builder = gpui::PathBuilder::stroke(px(1.5));
+                    let mut builder = rounded_stroke(2.0);
                     builder.move_to(point(x(from.0), y(from.1)));
                     builder.line_to(point(x(to.0), y(to.1)));
                     builder.build()
@@ -5127,7 +5162,7 @@ fn paint_lanes(
             }
             layout::SegmentKind::Curve { from, to, control } => {
                 if let Ok(path) = {
-                    let mut builder = gpui::PathBuilder::stroke(px(1.5));
+                    let mut builder = rounded_stroke(2.0);
                     builder.move_to(point(x(from.0), y(from.1)));
                     builder.curve_to(point(x(to.0), y(to.1)), point(x(control.0), y(control.1)));
                     builder.build()
@@ -5283,7 +5318,7 @@ mod tests {
         assert_eq!(format_date("2024-05-01 10:00:00 +0000", true), "2024-05-01");
         assert_eq!(
             format_date("2024-05-01 10:00:00 +0000", false),
-            "2024-05-01 10:00:00 +0000"
+            "2024-05-01 10:00"
         );
     }
 
