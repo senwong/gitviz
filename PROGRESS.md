@@ -68,6 +68,7 @@
 - 批次 28（A 项）：**自定义 PR Provider 模板**——`.gitviz.conf` 的 `pr_provider`（占位符 `{host}/{owner}/{repo}/{base}/{head}`），非空时优先于内置 provider。**新增 `render_pr_template` 单测、config 往返扩展**
 - 批次 29（A 项）：**提交正文（body）**——`Commit` 增加 `body`，`git log` 改用记录分隔符解析多行 body；Find 现在也搜索正文。**新增 `reads_commit_body` 集成测试、find 测试扩展**
 - 说明：既然 `git log` 的解析从“逐行”改为“按记录分隔符”，需在 build 时重点验证 log 解析（见“编译时预计要修的点”）
+- 批次 30（A 项）：**完整 ref 名开关**——`LogFilter::full_refs` + `decorate_args`（`--decorate=full`），设置面板 “Show full ref names”。**新增 `decorate_args` 单测**
 
 ## 文件结构
 

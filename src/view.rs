@@ -80,6 +80,7 @@ pub struct GraphView {
     file_tree: bool,
     compact_folders: bool,
     show_remote_heads: bool,
+    use_full_refs: bool,
     fetch_prune: bool,
     fetch_prune_tags: bool,
     color_preset: usize,
@@ -528,6 +529,7 @@ impl GraphView {
             file_tree: false,
             compact_folders: true,
             show_remote_heads: false,
+            use_full_refs: false,
             fetch_prune: false,
             fetch_prune_tags: false,
             color_preset: 0,
@@ -634,6 +636,7 @@ impl GraphView {
         self.filter.use_mailmap = self.use_mailmap;
         self.filter.include_reflogs = self.include_reflogs;
         self.filter.remote_heads = self.show_remote_heads;
+        self.filter.full_refs = self.use_full_refs;
         self.tags = git::tags_with_details(&repo.path);
         if self.show_uncommitted {
             self.status = git::status(&repo.path, self.include_untracked);
@@ -2677,6 +2680,7 @@ impl GraphView {
             ("Relative dates", self.relative_dates, "relative-dates"),
             ("Scroll to HEAD on load", self.scroll_to_head_on_load, "load-scroll-head"),
             ("Show remote HEAD refs", self.show_remote_heads, "remote-heads"),
+            ("Show full ref names", self.use_full_refs, "full-refs"),
             ("Only tag commits", self.filter.only_tags, "only-tags"),
             ("Fetch: prune", self.fetch_prune, "fetch-prune"),
             ("Fetch: prune tags", self.fetch_prune_tags, "fetch-prune-tags"),
@@ -3069,6 +3073,11 @@ impl GraphView {
             "graph-style" => self.graph_style = self.graph_style.toggled(),
             "remote-heads" => {
                 self.show_remote_heads = !self.show_remote_heads;
+                self.load(cx);
+                return;
+            }
+            "full-refs" => {
+                self.use_full_refs = !self.use_full_refs;
                 self.load(cx);
                 return;
             }

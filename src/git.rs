@@ -55,6 +55,17 @@ pub struct LogFilter {
     /// Show only commits that are reachable from tags (and not from any
     /// branch or remote).
     pub only_tags: bool,
+    /// Show full ref names (`refs/heads/main`) instead of short names.
+    pub full_refs: bool,
+}
+
+/// The `git log` decoration arguments for a filter.
+pub fn decorate_args(full_refs: bool) -> Vec<String> {
+    if full_refs {
+        vec!["--decorate=full".to_string()]
+    } else {
+        Vec::new()
+    }
 }
 
 /// The ref-related `git log` arguments implied by a filter. Pure so it can be
@@ -165,6 +176,7 @@ pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<
     if filter.include_reflogs {
         args.push("--reflog".into());
     }
+    args.extend(decorate_args(filter.full_refs));
     args.extend(log_ref_args(filter));
     args.push("HEAD".into());
 
@@ -998,6 +1010,12 @@ mod tests {
                 "--prune-tags"
             ]
         );
+    }
+
+    #[test]
+    fn decorate_args_full_only_when_requested() {
+        assert!(decorate_args(false).is_empty());
+        assert_eq!(decorate_args(true), vec!["--decorate=full"]);
     }
 
     #[test]

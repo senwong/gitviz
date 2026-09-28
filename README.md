@@ -139,7 +139,7 @@ script/build       cargo 包装脚本
 - 列与外观
   - [x] Date / Author / Commit 列显示开关（设置面板）；短日期 / 相对日期（“3 days ago”）
   - [x] 深浅主题切换
-  - [x] 列宽 +/-（含拖拽）、车道配色预设（自定义颜色 + rounded/angular graph style）；reference label 对齐/合并已做
+  - [x] 列宽 +/-（含拖拽）、车道配色预设（自定义颜色 + rounded/angular graph style）；reference label 对齐/合并已做；完整 ref 名开关
 - 消息渲染
   - [x] Emoji shortcode / gitmoji 替换
   - [x] Markdown 子集（粗体/斜体/行内代码）
