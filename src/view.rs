@@ -2232,6 +2232,7 @@ impl Render for GraphView {
                         .min_h_0()
                         .w_full()
                         .child(body)
+                        .child(self.render_scrollbar())
                         .when_some(detail, |this, detail| this.child(detail)),
                 )
                 .child(self.render_footer())
@@ -4600,6 +4601,38 @@ impl GraphView {
             let _ = git::open_path(&target);
             self.mark_reviewed_if_active(&sha, path);
         }
+    }
+
+    /// A thin scrollbar for the commit list (gpui's `list` does not draw one).
+    fn render_scrollbar(&self) -> AnyElement {
+        let theme = self.theme.clone();
+        let max_offset = self.list_state.max_offset_for_scrollbar().y;
+        if max_offset <= px(0.) {
+            return div().w(px(10.)).h_full().flex_none().into_any_element();
+        }
+        let current =
+            (-self.list_state.scroll_px_offset_for_scrollbar().y).clamp(px(0.), max_offset);
+        let viewport = self.list_state.viewport_bounds().size.height;
+        let fraction = (current.as_f32() / max_offset.as_f32()).clamp(0., 1.);
+        let total = viewport.as_f32() + max_offset.as_f32();
+        let thumb_height = px((viewport.as_f32() * viewport.as_f32() / total).max(30.));
+        let thumb_top = (viewport - thumb_height) * fraction;
+        div()
+            .w(px(10.))
+            .h_full()
+            .flex_none()
+            .relative()
+            .child(
+                div()
+                    .absolute()
+                    .top(thumb_top)
+                    .left(px(2.))
+                    .w(px(6.))
+                    .h(thumb_height)
+                    .rounded_full()
+                    .bg(theme.border),
+            )
+            .into_any_element()
     }
 
     fn render_footer(&self) -> AnyElement {
