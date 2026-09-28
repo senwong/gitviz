@@ -43,6 +43,7 @@
 - 批次 4：改动文件状态字母（A/M/D/R/U）、详情文件树（compact folders）、作者头像（首字母圆形）、车道配色预设、remote HEAD refs、annotated tag 详情、列宽字段；**并补上单元测试 + 集成测试 + lib target**
 - 批次 5：命令面板（⇧⌘P）、查找导航（⌘G / ⇧⌘G）+ 匹配高亮、参考标签对齐（combine + align）、仅标签提交（only-tags）、两提交间文件 diff、签名验证详情；**新增 `log_ref_args`/`compare_file_diff`/`signature_details` 及对应单测/集成测试**
 - 批次 6：列宽 +/- 调节、仓库发现深度可调（`discover_with_depth`）、详情显示“包含该提交的分支/标签”；**新增 `adjust_width` 单测、`discovery` 深度单测、`branches_containing`/`tags_containing` 集成测试**
+- 批次 7：查找匹配扩展（日期/ref 名）、stash 建分支（菜单+提示框）、tag 的 Push/Delete 按钮、按提交打开文件（Rev）；**`find_matches` 单测更新、`show_file`/`delete_tag`/`stash_branch` 集成测试**
 
 ## 文件结构
 

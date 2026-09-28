@@ -453,6 +453,11 @@ pub fn file_diff(repo: &Path, sha: &str, path: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Contents of a file at a specific commit.
+pub fn show_file(repo: &Path, sha: &str, path: &str) -> String {
+    run(repo, &["show", &format!("{sha}:{path}")]).unwrap_or_default()
+}
+
 /// Unified diff of a single file between two commits.
 pub fn compare_file_diff(repo: &Path, from: &str, to: &str, path: &str) -> String {
     run(repo, &["diff", "--no-color", from, to, "--", path]).unwrap_or_default()

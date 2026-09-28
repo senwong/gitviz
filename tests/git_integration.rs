@@ -177,6 +177,40 @@ fn containing_branches_and_tags() {
 }
 
 #[test]
+fn shows_file_at_revision_and_deletes_tag() {
+    let repo = TempRepo::new("revfile");
+    repo.commit("a.txt", "old\n", "one");
+    let first = git::log(&repo.path, 1, &LogFilter::default()).unwrap()[0]
+        .sha
+        .clone();
+    repo.commit("a.txt", "new\n", "two");
+
+    assert_eq!(git::show_file(&repo.path, &first, "a.txt"), "old\n");
+
+    git::create_tag(&repo.path, "v1", &first).unwrap();
+    assert!(git::tags(&repo.path).iter().any(|tag| tag == "v1"));
+    git::delete_tag(&repo.path, "v1").unwrap();
+    assert!(!git::tags(&repo.path).iter().any(|tag| tag == "v1"));
+}
+
+#[test]
+fn creates_branch_from_stash() {
+    let repo = TempRepo::new("stashbranch");
+    repo.commit("a.txt", "1\n", "one");
+    std::fs::write(repo.path.join("a.txt"), "changed\n").unwrap();
+    git::stash_push(&repo.path, true).unwrap();
+
+    git::stash_branch(&repo.path, 0, "from-stash").unwrap();
+    assert!(
+        git::local_branches(&repo.path)
+            .iter()
+            .any(|branch| branch == "from-stash")
+    );
+    // Applying the stash to a branch removes it from the stash list.
+    assert!(git::stashes(&repo.path).is_empty());
+}
+
+#[test]
 fn remotes_are_readable() {
     let repo = TempRepo::new("remote");
     repo.commit("a.txt", "1\n", "one");

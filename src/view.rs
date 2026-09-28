@@ -182,6 +182,12 @@ fn find_matches(commits: &[Commit], query: &str) -> Vec<usize> {
             commit.subject.to_lowercase().contains(&query)
                 || commit.author.to_lowercase().contains(&query)
                 || commit.sha.starts_with(&query)
+                || commit.author_date.to_lowercase().contains(&query)
+                || commit.commit_date.to_lowercase().contains(&query)
+                || commit
+                    .refs
+                    .iter()
+                    .any(|ref_name| ref_name.to_lowercase().contains(&query))
         })
         .map(|(index, _)| index)
         .collect()
@@ -240,6 +246,7 @@ enum PromptAction {
     CreateBranch,
     CreateTag,
     AddRemote,
+    StashBranch,
 }
 
 struct DiffView {
@@ -266,6 +273,7 @@ enum MenuAction {
     StashApply,
     StashPop,
     StashDrop,
+    StashBranch,
 }
 
 struct Menu {
@@ -302,6 +310,7 @@ impl MenuAction {
             MenuAction::StashApply => "Apply Stash",
             MenuAction::StashPop => "Pop Stash",
             MenuAction::StashDrop => "Drop Stash",
+            MenuAction::StashBranch => "Create Branch From Stash…",
         }
     }
 }
@@ -997,6 +1006,11 @@ impl GraphView {
                     self.run_op(move |repo| git::add_remote(&repo.path, &remote_name, &url), cx);
                 }
             }
+            PromptAction::StashBranch => {
+                if let Ok(index) = sha.parse::<usize>() {
+                    self.run_op(move |repo| git::stash_branch(&repo.path, index, &name), cx);
+                }
+            }
         }
     }
 
@@ -1032,6 +1046,7 @@ impl GraphView {
                     MenuAction::StashApply,
                     MenuAction::StashPop,
                     MenuAction::StashDrop,
+                    MenuAction::StashBranch,
                 ],
             ),
             RowKind::Uncommitted => (MenuContext::Uncommitted, vec![]),
@@ -1110,6 +1125,15 @@ impl GraphView {
                 }
                 MenuAction::StashDrop => {
                     self.run_op(move |repo| git::stash_drop(&repo.path, index), cx)
+                }
+                MenuAction::StashBranch => {
+                    self.prompt = Some(Prompt {
+                        title: "Create branch from stash".to_string(),
+                        input: String::new(),
+                        action: PromptAction::StashBranch,
+                        sha: index.to_string(),
+                    });
+                    cx.notify();
                 }
                 _ => {}
             },
@@ -1475,7 +1499,7 @@ impl GraphView {
                 },
             )
             .child(self.render_message(&detail.message))
-            .child(self.render_tags(&sha))
+            .child(self.render_tags(&sha, weak.clone()))
             .child(self.render_detail_actions(&sha, weak))
             .child(
                 div()
@@ -1490,16 +1514,25 @@ impl GraphView {
             .into_any_element()
     }
 
-    fn render_tags(&self, sha: &str) -> AnyElement {
+    fn render_tags(&self, sha: &str, weak: gpui::WeakEntity<Self>) -> AnyElement {
         let theme = self.theme.clone();
-        let matching: Vec<&git::TagDetail> =
-            self.tags.iter().filter(|tag| tag.commit == sha).collect();
+        let matching: Vec<git::TagDetail> = self
+            .tags
+            .iter()
+            .filter(|tag| tag.commit == sha)
+            .cloned()
+            .collect();
         if matching.is_empty() {
             return div().into_any_element();
         }
         let rows: Vec<AnyElement> = matching
             .iter()
             .map(|tag| {
+                let name_push = tag.name.clone();
+                let name_delete = tag.name.clone();
+                let weak_push = weak.clone();
+                let weak_delete = weak.clone();
+                let theme_row = theme.clone();
                 v_flex()
                     .w_full()
                     .px_3()
@@ -1508,10 +1541,49 @@ impl GraphView {
                     .border_t_1()
                     .border_color(theme.border)
                     .child(
-                        div()
-                            .text_sm()
-                            .text_color(theme.accent)
-                            .child(format!("tag {}", tag.name)),
+                        h_flex()
+                            .w_full()
+                            .gap_2()
+                            .items_center()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .text_color(theme.accent)
+                                    .child(format!("tag {}", tag.name)),
+                            )
+                            .child(div().flex_1())
+                            .child(action_button(
+                                format!("tag-push-{}", tag.name),
+                                "Push",
+                                &theme_row,
+                                move |cx| {
+                                    let name = name_push.clone();
+                                    weak_push
+                                        .update(cx, |this, cx| {
+                                            this.run_op(
+                                                move |repo| git::push_tag(&repo.path, &name),
+                                                cx,
+                                            )
+                                        })
+                                        .ok();
+                                },
+                            ))
+                            .child(action_button(
+                                format!("tag-delete-{}", tag.name),
+                                "Delete",
+                                &theme_row,
+                                move |cx| {
+                                    let name = name_delete.clone();
+                                    weak_delete
+                                        .update(cx, |this, cx| {
+                                            this.run_op(
+                                                move |repo| git::delete_tag(&repo.path, &name),
+                                                cx,
+                                            )
+                                        })
+                                        .ok();
+                                },
+                            )),
                     )
                     .child(
                         div()
@@ -2310,8 +2382,10 @@ fn render_file_row(
     let weak_review = weak.clone();
     let weak_copy = weak.clone();
     let weak_open = weak.clone();
+    let weak_rev = weak.clone();
     let path_copy = file.path.clone();
     let path_open = file.path.clone();
+    let path_rev = file.path.clone();
     let theme = theme.clone();
     let (sha, reviewed) = review.map(|(sha, reviewed)| (sha, reviewed)).unwrap_or_default();
     h_flex()
@@ -2388,6 +2462,20 @@ fn render_file_row(
                 })
                 .child("Open"),
         )
+        .child(
+            div()
+                .id(format!("rev-file-{}", file.path))
+                .text_sm()
+                .text_color(theme.text_muted)
+                .on_click(move |_: &ClickEvent, window, cx| {
+                    let _ = window;
+                    cx.stop_propagation();
+                    weak_rev
+                        .update(cx, |this, cx| this.open_file_at_revision(&path_rev, cx))
+                        .ok();
+                })
+                .child("Rev"),
+        )
         .into_any_element()
 }
 
@@ -2431,6 +2519,25 @@ impl GraphView {
     fn open_file(&mut self, path: &str, _cx: &mut Context<Self>) {
         if let Some(repo) = self.active_repo().cloned() {
             let _ = git::open_path(&repo.path.join(path));
+        }
+    }
+
+    /// Writes the file as it was at the selected commit to a temp file and
+    /// opens it, mirroring git-graph's "Open at this revision".
+    fn open_file_at_revision(&mut self, path: &str, _cx: &mut Context<Self>) {
+        let Some(sha) = self.detail_sha.clone() else {
+            return;
+        };
+        let Some(repo) = self.active_repo().cloned() else {
+            return;
+        };
+        let content = git::show_file(&repo.path, &sha, path);
+        let file_name = path.rsplit('/').next().unwrap_or("file").to_string();
+        let dir = std::env::temp_dir().join(format!("gitviz-rev-{}", &sha[..sha.len().min(8)]));
+        let _ = std::fs::create_dir_all(&dir);
+        let target = dir.join(file_name);
+        if std::fs::write(&target, content).is_ok() {
+            let _ = git::open_path(&target);
         }
     }
 
@@ -3055,13 +3162,16 @@ mod tests {
 
     #[test]
     fn find_matches_by_subject_author_and_sha() {
-        let commits = vec![
-            commit("abc123", "Fix SEO", "Sen"),
-            commit("def456", "Add graph", "Alice"),
-        ];
+        let mut first = commit("abc123", "Fix SEO", "Sen");
+        first.author_date = "2024-05-01 10:00".to_string();
+        first.refs = vec!["v1.2.0".to_string()];
+        let commits = vec![first, commit("def456", "Add graph", "Alice")];
+
         assert_eq!(find_matches(&commits, "seo"), vec![0]);
         assert_eq!(find_matches(&commits, "alice"), vec![1]);
         assert_eq!(find_matches(&commits, "abc"), vec![0]);
+        assert_eq!(find_matches(&commits, "2024-05-01"), vec![0]);
+        assert_eq!(find_matches(&commits, "v1.2"), vec![0]);
         assert!(find_matches(&commits, "").is_empty());
     }
 
