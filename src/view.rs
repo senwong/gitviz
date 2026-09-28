@@ -1671,7 +1671,7 @@ impl Render for GraphView {
             .child(chip("Push", false, "push", weak.clone(), theme.clone()))
             .child(chip("PR", false, "pr", weak.clone(), theme.clone()))
             .child(chip("Load more", false, "load-more", weak.clone(), theme.clone()))
-            .child(chip("Theme", false, "theme", weak, theme.clone()));
+            .child(chip("Theme", false, "theme", weak.clone(), theme.clone()));
 
         let search_bar = self.search_active.then(|| {
             h_flex()
