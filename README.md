@@ -72,7 +72,7 @@ cd ~/projects/gitviz
 | `⌘R` | 重新加载当前仓库（`git log`） |
 | `⌘H` | 滚动到 HEAD |
 | `⌘S` / `⇧⌘S` | 跳到下一个 / 上一个 stash |
-| `⌘T` | 切换深浅主题 |
+| `⌘T` | 循环切换主题 |
 | `⌘↑` / `⌘↓` | 跳到同分支的父 / 子提交（按住 `⇧` 走替代分支） |
 | `↑` / `↓` | 上下选择提交 |
 | `⌘`/`Ctrl` + 点击 | 进入提交对比（选中 Uncommitted 时为工作区↔提交对比） |
@@ -156,7 +156,7 @@ script/build       cargo 包装脚本
   - [x] ⌘↑/⌘↓ 同分支父子跳转；⇧ 变体（沿替代分支）
 - 列与外观
   - [x] Date / Author / Commit 列显示开关（设置面板）；短日期 / 相对日期（“3 days ago”）
-  - [x] 深浅主题切换
+  - [x] 深浅主题切换；**10 个内置主题**（5 深 + 5 浅：Dark+、One Dark Pro、Dracula、Nord、Solarized Dark、GitHub Light、One Light、Solarized Light、Quiet Light、Gruvbox Light）；命令面板 / 菜单 View → Select Theme… 选择，`⌘T` 循环切换，选择会持久化
   - [x] 列宽 +/-（含拖拽）、车道配色预设（自定义颜色 + rounded/angular graph style）；reference label 对齐/合并已做；完整 ref 名开关
 - 消息渲染
   - [x] Emoji shortcode / gitmoji 替换

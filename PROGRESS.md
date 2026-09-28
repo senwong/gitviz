@@ -83,13 +83,12 @@
 - 批次 36（A 项）：**欢迎页 + Open Recent + 原生菜单栏 + 快捷键调整**
   - 未打开仓库时展示欢迎页（Open Repository…/Open Workspace… 按钮 + Open Recent 列表）；打开仓库后才显示 Git Graph
   - Open Recent：`~/.config/gitviz/recent`（记住最近打开的仓库/工作区），欢迎页与 File 菜单均可用；上一次的 roots 也持久化到 `~/.config/gitviz/roots`，下次启动直接恢复
-  - 新 `src/actions.rs`（`actions!`）与原生菜单栏 File/View/Window/Help（Open Repository/Workspace、Save Workspace、Open Recent、Switch Repository、Toggle Theme、Refresh、Find、Minimize/Zoom、Quit），在 `view.rs` 用 `.on_action` 处理
+  - 新 `src/actions.rs`（`actions!`）与原生菜单栏 File/View/Window/Help（Open Repository/Workspace、Save Workspace、Open Recent、Switch Repository、Select/Next Theme、Refresh、Find、Minimize/Zoom、Quit），在 `view.rs` 用 `.on_action` 处理
   - `⌘P` 打开命令面板、`⇧⌘P` 切换仓库（对齐常见编辑器）
   - 修复首次编译后发现的两个真实问题：**commit 列表空白**（body 容器用了 `items_center`，导致 `uniform_list` 没被拉伸到全高 → 改为 `flex_row` 默认 stretch）；**Finder 打开时无内容**（忽略 `-psn_*` 参数；不再扫描整个 `$HOME`，改为「上次的 roots → 当前目录 → 空（欢迎页）」，并在 discovery 跳过 `Library/Desktop/Documents/Downloads` 等目录以避免隐私/网络卷弹窗）
-- 验证更新：全量 **70 单测 + 23 集成 = 93 项全部通过**；release DMG 已重新打包，截图确认欢迎页与 Git Graph 均正常。
-- 验证：非 UI 逻辑（含上述所有 git 单测/集成测试）已在独立 crate 跑通 **36 单测 + 20 集成**；仅 `view.rs`/`theme.rs` 未编译。
-- 批次 34（A 项）：**分支 ahead/behind**——`git rev-list --left-right --count <branch>...HEAD`（`parse_ahead_behind`/`ahead_behind`），在 load 时缓存到 `branch_tracking`，分支面板显示 ↑ahead / ↓behind。**新增 `parse_ahead_behind` 单测、`reports_ahead_behind_counts` 集成测试、`build_tree_rows` 文件树单测**
-- 验证更新：独立 crate 目前 **37 单测 + 21 集成 = 58 项全部通过**。
+- 批次 37（A 项）：**性能**——`load()` 改为 `cx.background_spawn` 后台执行 git（`git status`/`head_ancestors`/`tags` 等在 cms-wp 上实测合计 ~4s，之前会冻结 UI）；ahead/behind 从「每次 load 计算所有分支」改为**打开分支面板时惰性计算**（`ensure_branch_tracking`）；hover 不再触发 git（containment 改由选中提交时填充缓存）；加载中显示 “Loading…”；用 `load_gen` 丢弃过期结果。**新增主题/占位单测**
+- 批次 38（A 项）：**主题系统**——`theme.rs` 移植 10 个常见主题（5 深：Dark+、One Dark Pro、Dracula、Nord、Solarized Dark；5 浅：GitHub Light、One Light、Solarized Light、Quiet Light、Gruvbox Light）；修复 `overlay` 用错 `rgb()`（8 位被当成不透明蓝色）改用 `rgba()`；`⌘T` 循环、命令面板/菜单 “Select Theme…” 选择、选择持久化到 `~/.config/gitviz/theme`。**新增 `Theme::all`/`by_name`/`toggled` 单测**
+- 验证：全量 **73 单测 + 23 集成 = 96 项全部通过**；release DMG 已重新打包。
 
 ## 文件结构
 

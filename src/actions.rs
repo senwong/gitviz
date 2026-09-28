@@ -17,5 +17,6 @@ actions!(gitviz, [
     Minimize,
     Zoom,
     OpenHomepage,
+    SelectTheme,
     Quit,
 ]);

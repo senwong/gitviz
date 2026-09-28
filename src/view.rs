@@ -57,14 +57,31 @@ impl Default for Columns {
     }
 }
 
+/// The result of the (expensive, background) git work for one repository.
+struct LoadResult {
+    branch: Option<String>,
+    head_ancestors: HashSet<String>,
+    local_branches: Vec<String>,
+    remotes: Vec<String>,
+    remote_info: Option<RemoteInfo>,
+    tags: Vec<git::TagDetail>,
+    status: Vec<StatusEntry>,
+    stashes: Vec<StashEntry>,
+    commits: Result<Vec<Commit>, String>,
+}
+
 pub struct GraphView {
     repos: Vec<Repo>,
     roots: Vec<std::path::PathBuf>,
     workspace_path: Option<std::path::PathBuf>,
     recent: Vec<std::path::PathBuf>,
     recent_menu: RecentMenu,
+    theme_menu: RecentMenu,
     repo_depth: usize,
     active: usize,
+    /// Incremented on every `load`, so stale background results are ignored.
+    load_gen: u64,
+    loading: bool,
     branch: Option<String>,
     commits: Vec<Commit>,
     rows: Vec<RowKind>,
@@ -206,6 +223,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Open workspace…", "open-workspace"),
     ("Save workspace…", "save-workspace"),
     ("Open recent…", "open-recent"),
+    ("Select theme…", "select-theme"),
 ];
 
 fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
@@ -528,8 +546,11 @@ impl GraphView {
             workspace_path: None,
             recent: crate::workspace::load_recent(),
             recent_menu: RecentMenu::default(),
+            theme_menu: RecentMenu::default(),
             repo_depth: crate::discovery::DEFAULT_DEPTH,
             active: 0,
+            load_gen: 0,
+            loading: false,
             branch: None,
             commits: Vec::new(),
             rows: Vec::new(),
@@ -613,7 +634,9 @@ impl GraphView {
             remotes: Vec::new(),
             remote_info: None,
             signature: None,
-            theme: Theme::dark(),
+            theme: crate::workspace::load_theme()
+                .and_then(|name| Theme::by_name(&name))
+                .unwrap_or_else(Theme::default_theme),
             focus_handle,
         };
         this.apply_repo_config();
@@ -638,13 +661,7 @@ impl GraphView {
         self.head_ancestors.clear();
         self.status.clear();
         self.stashes.clear();
-        self.rows_dirty = true;
-
-        let Some(repo) = self.active_repo().cloned() else {
-            return;
-        };
-
-        self.branch = git::head_branch(&repo.path);
+        self.branch_tracking.clear();
         self.signature = None;
         self.signature_details = None;
         self.branches_containing.clear();
@@ -652,33 +669,84 @@ impl GraphView {
         self.containment_cache.clear();
         self.matches.clear();
         self.match_cursor = 0;
-        self.head_ancestors = git::head_ancestors(&repo.path, 50_000);
-        self.branch_filter.all = git::local_branches(&repo.path);
-        self.remotes = git::remotes(&repo.path);
-        self.remote_info = git::hosting_remote(&repo.path);
+        self.rows_dirty = true;
+
+        let Some(repo) = self.active_repo().cloned() else {
+            self.loading = false;
+            cx.notify();
+            return;
+        };
+
+        // Keep the log filter in sync with the current settings before the
+        // background task reads it.
         self.filter.use_mailmap = self.use_mailmap;
         self.filter.include_reflogs = self.include_reflogs;
         self.filter.remote_heads = self.show_remote_heads;
         self.filter.full_refs = self.use_full_refs;
-        self.tags = git::tags_with_details(&repo.path);
-        self.branch_tracking = self
-            .branch_filter
-            .all
-            .iter()
-            .filter_map(|branch| {
-                git::ahead_behind(&repo.path, branch).map(|counts| (branch.clone(), counts))
-            })
-            .collect();
-        if self.show_uncommitted {
-            self.status = git::status(&repo.path, self.include_untracked);
-        }
-        if self.show_stashes {
-            self.stashes = git::stashes(&repo.path);
-        }
 
-        match git::log(&repo.path, self.loaded, &self.filter) {
-            Ok(mut commits) => {
-                layout::assign_lanes(&mut commits);
+        let filter = self.filter.clone();
+        let include_untracked = self.include_untracked;
+        let show_uncommitted = self.show_uncommitted;
+        let show_stashes = self.show_stashes;
+        let loaded = self.loaded;
+        self.load_gen += 1;
+        let generation = self.load_gen;
+        self.loading = true;
+        cx.notify();
+
+        let task = cx.background_spawn(async move {
+            let commits = match git::log(&repo.path, loaded, &filter) {
+                Ok(mut commits) => {
+                    layout::assign_lanes(&mut commits);
+                    Ok(commits)
+                }
+                Err(error) => Err(error.to_string()),
+            };
+            LoadResult {
+                branch: git::head_branch(&repo.path),
+                head_ancestors: git::head_ancestors(&repo.path, 50_000),
+                local_branches: git::local_branches(&repo.path),
+                remotes: git::remotes(&repo.path),
+                remote_info: git::hosting_remote(&repo.path),
+                tags: git::tags_with_details(&repo.path),
+                status: if show_uncommitted {
+                    git::status(&repo.path, include_untracked)
+                } else {
+                    Vec::new()
+                },
+                stashes: if show_stashes {
+                    git::stashes(&repo.path)
+                } else {
+                    Vec::new()
+                },
+                commits,
+            }
+        });
+
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            this.update(cx, |this, cx| {
+                if this.load_gen == generation {
+                    this.apply_load(result, cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn apply_load(&mut self, result: LoadResult, cx: &mut Context<Self>) {
+        self.loading = false;
+        self.branch = result.branch;
+        self.head_ancestors = result.head_ancestors;
+        self.branch_filter.all = result.local_branches;
+        self.remotes = result.remotes;
+        self.remote_info = result.remote_info;
+        self.tags = result.tags;
+        self.status = result.status;
+        self.stashes = result.stashes;
+        match result.commits {
+            Ok(commits) => {
                 self.commits = commits;
                 if self.scroll_to_head_on_load
                     && let Some(index) =
@@ -687,9 +755,29 @@ impl GraphView {
                     self.selected = Some(RowKind::Commit(index));
                 }
             }
-            Err(error) => self.error = Some(error.to_string()),
+            Err(error) => self.error = Some(error),
         }
+        self.rows_dirty = true;
         cx.notify();
+    }
+
+    /// Computes per-branch ahead/behind counts on demand (they are only shown
+    /// in the branch filter panel, and cost one `git rev-list` per branch).
+    fn ensure_branch_tracking(&mut self) {
+        if !self.branch_tracking.is_empty() {
+            return;
+        }
+        let Some(repo) = self.active_repo().cloned() else {
+            return;
+        };
+        self.branch_tracking = self
+            .branch_filter
+            .all
+            .iter()
+            .filter_map(|branch| {
+                git::ahead_behind(&repo.path, branch).map(|counts| (branch.clone(), counts))
+            })
+            .collect();
     }
 
     fn active_repo(&self) -> Option<&Repo> {
@@ -772,6 +860,15 @@ impl GraphView {
             self.signature_details = git::signature_details(&repo.path, &sha);
             self.branches_containing = git::branches_containing(&repo.path, &sha);
             self.tags_containing = git::tags_containing(&repo.path, &sha);
+            // Cache containment so hovering this commit does not shell out.
+            self.containment_cache.insert(
+                sha.clone(),
+                Containment {
+                    branches: self.branches_containing.clone(),
+                    tags: self.tags_containing.clone(),
+                    stashes: git::stashes_containing(&repo.path, &sha),
+                },
+            );
         }
         cx.notify();
     }
@@ -983,6 +1080,28 @@ impl GraphView {
                 "down" => {
                     if count > 0 && self.recent_menu.selected + 1 < count {
                         self.recent_menu.selected += 1;
+                    }
+                }
+                _ => {}
+            }
+            cx.notify();
+            return;
+        }
+
+        if self.theme_menu.open {
+            let themes = Theme::names();
+            let count = themes.len();
+            match keystroke.key.as_str() {
+                "escape" => self.theme_menu.open = false,
+                "enter" => {
+                    if let Some(name) = themes.get(self.theme_menu.selected).copied() {
+                        self.apply_theme(name);
+                    }
+                }
+                "up" => self.theme_menu.selected = self.theme_menu.selected.saturating_sub(1),
+                "down" => {
+                    if count > 0 && self.theme_menu.selected + 1 < count {
+                        self.theme_menu.selected += 1;
                     }
                 }
                 _ => {}
@@ -1345,6 +1464,15 @@ impl GraphView {
         } else if self.add_root(path) {
             self.rediscover(cx);
         }
+    }
+
+    /// Switches to the named theme and remembers the choice.
+    fn apply_theme(&mut self, name: &str) {
+        if let Some(theme) = Theme::by_name(name) {
+            self.theme = theme;
+            crate::workspace::save_theme(name);
+        }
+        self.theme_menu.open = false;
     }
 
     /// Handles paths dragged onto the window: repository folders are added as
@@ -1741,14 +1869,19 @@ impl Render for GraphView {
             .unwrap_or_else(|| "no repository".to_string());
 
         let chip = |label: &'static str, on: bool, id: &'static str, weak: gpui::WeakEntity<Self>, theme: Theme| {
+            let hover = theme.hover;
             div()
                 .id(id)
                 .px_2()
                 .py_0p5()
-                .rounded_md()
+                .rounded_full()
                 .text_sm()
+                .cursor_pointer()
                 .when(on, |this| this.bg(theme.accent).text_color(theme.bg))
-                .when(!on, |this| this.text_color(theme.text_muted))
+                .when(!on, |this| {
+                    this.text_color(theme.text_muted)
+                        .hover(move |this| this.bg(hover))
+                })
                 .on_click(move |_: &ClickEvent, window, cx| {
                     let _ = window;
                     weak.update(cx, |this, cx| this.on_chip(id, cx)).ok();
@@ -1834,6 +1967,12 @@ impl Render for GraphView {
 
         let body: AnyElement = if let Some(error) = &self.error {
             div().p_4().text_color(theme.error).child(error.clone()).into_any_element()
+        } else if self.loading && self.commits.is_empty() {
+            div()
+                .p_4()
+                .text_color(theme.text_muted)
+                .child("Loading…")
+                .into_any_element()
         } else {
             let ctx = Arc::new(row_ctx);
             let weak = cx.weak_entity();
@@ -1857,6 +1996,7 @@ impl Render for GraphView {
         let settings = self.settings_open.then(|| self.render_settings(weak.clone()));
         let diff = self.diff.as_ref().map(|view| self.render_diff(view));
         let recent = self.recent_menu.open.then(|| self.render_recent(weak.clone()));
+        let theme_picker = self.theme_menu.open.then(|| self.render_theme(weak.clone()));
 
         let content: AnyElement = if self.repos.is_empty() {
             self.render_welcome(weak.clone())
@@ -1915,6 +2055,14 @@ impl Render for GraphView {
             }))
             .on_action(cx.listener(|this, _: &ToggleTheme, _window, cx| {
                 this.theme = this.theme.toggled();
+                crate::workspace::save_theme(this.theme.name);
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &SelectTheme, _window, cx| {
+                this.theme_menu = RecentMenu {
+                    open: true,
+                    selected: 0,
+                };
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &RefreshGraph, _window, cx| this.load(cx)))
@@ -1932,6 +2080,7 @@ impl Render for GraphView {
             .on_action(cx.listener(|_this, _: &Quit, _window, cx| cx.quit()))
             .child(content)
             .when_some(recent, |this, recent| this.child(recent))
+            .when_some(theme_picker, |this, picker| this.child(picker))
             .when_some(diff, |this, diff| this.child(diff))
             .when_some(palette, |this, palette| this.child(palette))
             .when_some(commands, |this, commands| this.child(commands))
@@ -1973,6 +2122,9 @@ impl GraphView {
             }
             "branch-filter" => {
                 self.branch_filter.open = !self.branch_filter.open;
+                if self.branch_filter.open {
+                    self.ensure_branch_tracking();
+                }
                 cx.notify();
             }
             "settings" => {
@@ -2126,6 +2278,14 @@ impl GraphView {
             }
             "theme" => {
                 self.theme = self.theme.toggled();
+                crate::workspace::save_theme(self.theme.name);
+                cx.notify();
+            }
+            "select-theme" => {
+                self.theme_menu = RecentMenu {
+                    open: true,
+                    selected: 0,
+                };
                 cx.notify();
             }
             _ => {}
@@ -2563,7 +2723,11 @@ impl GraphView {
                     .w_full()
                     .px_3()
                     .py_1()
-                    .when(is_selected, |this| this.bg(theme.selected))
+                    .when(is_selected, |this| {
+                        this.bg(theme.selected)
+                            .border_l_2()
+                            .border_color(theme.accent)
+                    })
                     .on_click(move |_: &ClickEvent, window, cx| {
                         let _ = window;
                         weak.update(cx, |this, cx| {
@@ -2714,7 +2878,11 @@ impl GraphView {
                     .px_3()
                     .py_1()
                     .gap_2()
-                    .when(is_selected, |this| this.bg(theme.selected))
+                    .when(is_selected, |this| {
+                        this.bg(theme.selected)
+                            .border_l_2()
+                            .border_color(theme.accent)
+                    })
                     .on_click(move |_: &ClickEvent, window, cx| {
                         let _ = window;
                         weak.update(cx, |this, cx| this.switch_to(repo_index, cx))
@@ -2770,10 +2938,11 @@ impl GraphView {
                 .id(id)
                 .px_4()
                 .py_2()
-                .rounded_md()
+                .rounded_full()
                 .bg(bg)
                 .text_color(fg)
                 .cursor_pointer()
+                .hover(move |this| this.opacity(0.88))
                 .on_click(move |_: &ClickEvent, _window, cx| {
                     weak.update(cx, |this, cx| this.on_chip(id, cx)).ok();
                 })
@@ -2892,12 +3061,17 @@ impl GraphView {
                 let text = theme.text;
                 let hover = theme.hover;
                 let selected_bg = theme.selected;
+                let accent = theme.accent;
                 h_flex()
                     .id(format!("recent-item-{index}"))
                     .w_full()
                     .px_3()
                     .py_1()
-                    .when(is_selected, |this| this.bg(selected_bg))
+                    .when(is_selected, |this| {
+                        this.bg(selected_bg)
+                            .border_l_2()
+                            .border_color(accent)
+                    })
                     .cursor_pointer()
                     .hover(move |this| this.bg(hover))
                     .on_click(move |_: &ClickEvent, _window, cx| {
@@ -2935,6 +3109,71 @@ impl GraphView {
                     .children(items)
                     .into_any_element()
             },
+        ])
+    }
+
+    fn render_theme(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
+        let theme = self.theme.clone();
+        let names = Theme::names();
+        let selected = self.theme_menu.selected.min(names.len().saturating_sub(1));
+
+        let items: Vec<AnyElement> = names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                let name: &'static str = *name;
+                let is_selected = index == selected;
+                let is_current = name == theme.name;
+                let weak = weak.clone();
+                let text = theme.text;
+                let muted = theme.text_muted;
+                let hover = theme.hover;
+                let selected_bg = theme.selected;
+                let accent = theme.accent;
+                h_flex()
+                    .id(format!("theme-item-{index}"))
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .gap_2()
+                    .when(is_selected, |this| {
+                        this.bg(selected_bg)
+                            .border_l_2()
+                            .border_color(accent)
+                    })
+                    .cursor_pointer()
+                    .hover(move |this| this.bg(hover))
+                    .on_click(move |_: &ClickEvent, _window, cx| {
+                        weak.update(cx, |this, cx| {
+                            this.apply_theme(name);
+                            cx.notify();
+                        })
+                        .ok();
+                    })
+                    .child(div().flex_1().text_sm().text_color(text).child(name))
+                    .when(is_current, |this| {
+                        this.child(div().text_sm().text_color(muted).child("current"))
+                    })
+                    .into_any_element()
+            })
+            .collect();
+
+        overlay(theme.clone(), 120., 480., vec![
+            div()
+                .w_full()
+                .px_3()
+                .py_2()
+                .text_color(theme.text)
+                .border_b_1()
+                .border_color(theme.border)
+                .child("Select Theme")
+                .into_any_element(),
+            v_flex()
+                .id("theme-list")
+                .w_full()
+                .overflow_y_scroll()
+                .children(items)
+                .into_any_element(),
         ])
     }
 
@@ -3648,7 +3887,7 @@ impl GraphView {
                 self.remove_active_repo(cx);
                 return;
             }
-            "open-repo" | "open-workspace" | "save-workspace" | "open-recent" => {
+            "open-repo" | "open-workspace" | "save-workspace" | "open-recent" | "select-theme" => {
                 self.on_chip(id, cx);
                 return;
             }
@@ -3721,7 +3960,7 @@ fn overlay(theme: Theme, top: f32, width: f32, children: Vec<AnyElement>) -> Any
                 .w(px(width))
                 .max_h(px(460.))
                 .bg(theme.panel)
-                .rounded_md()
+                .rounded_lg()
                 .shadow_lg()
                 .border_1()
                 .border_color(theme.border)
@@ -4248,18 +4487,6 @@ impl RowRenderContext {
                         if current != target {
                             this.hovered = target.map(RowKind::Commit);
                             cx.notify();
-                        }
-                        if let Some(index) = target
-                            && let Some(sha) = this.commits.get(index).map(|commit| commit.sha.clone())
-                            && !this.containment_cache.contains_key(&sha)
-                            && let Some(repo) = this.active_repo().cloned()
-                        {
-                            let containment = Containment {
-                                branches: git::branches_containing(&repo.path, &sha),
-                                tags: git::tags_containing(&repo.path, &sha),
-                                stashes: git::stashes_containing(&repo.path, &sha),
-                            };
-                            this.containment_cache.insert(sha, containment);
                         }
                     })
                     .ok();

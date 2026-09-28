@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 use gitviz::actions::{
     FindCommit, Minimize, OpenHomepage, OpenRecent, OpenRepository, OpenWorkspace, Quit,
-    RefreshGraph, SaveWorkspace, SwitchRepository, ToggleTheme, Zoom,
+    RefreshGraph, SaveWorkspace, SelectTheme, SwitchRepository, ToggleTheme, Zoom,
 };
 use gitviz::{discovery, view};
 use gpui::{
@@ -76,7 +76,9 @@ fn app_menus() -> Vec<Menu> {
             MenuItem::action("Switch Repository…", SwitchRepository),
         ]),
         Menu::new("View").items([
-            MenuItem::action("Toggle Theme", ToggleTheme),
+            MenuItem::action("Select Theme…", SelectTheme),
+            MenuItem::action("Next Theme", ToggleTheme),
+            MenuItem::separator(),
             MenuItem::action("Refresh", RefreshGraph),
             MenuItem::action("Find", FindCommit),
         ]),

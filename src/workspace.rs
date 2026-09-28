@@ -122,6 +122,30 @@ pub fn remember_recent(opened: &Path) {
     let _ = std::fs::write(path, serialize(&entries));
 }
 
+fn settings_path(file: &str) -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(PathBuf::from(home).join(".config/gitviz").join(file))
+}
+
+/// The theme name chosen last time, if any.
+pub fn load_theme() -> Option<String> {
+    let path = settings_path("theme")?;
+    let text = std::fs::read_to_string(path).ok()?;
+    let name = text.trim().to_string();
+    (!name.is_empty()).then_some(name)
+}
+
+/// Remembers the chosen theme name.
+pub fn save_theme(name: &str) {
+    let Some(path) = settings_path("theme") else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, name);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
