@@ -4251,11 +4251,10 @@ impl GraphView {
 
     fn render_diff(&self, view: &DiffView, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.clone();
-        let lines: Vec<AnyElement> = view
-            .text
-            .lines()
-            .map(|line| {
-                let (color, bg) = if line.starts_with("+++") || line.starts_with("---") {
+        let lines: Vec<AnyElement> = number_diff_lines(&view.text)
+            .into_iter()
+            .map(|(old, new, line)| {
+                let (color, bg) = if is_diff_header(&line) {
                     (theme.text_muted, None)
                 } else if line.starts_with('+') {
                     (theme.tag, Some(gpui::rgba(0x3fb95026)))
@@ -4266,16 +4265,36 @@ impl GraphView {
                 } else {
                     (theme.text_muted, None)
                 };
-                let mut element = div()
+                let numbers = match (old, new) {
+                    (Some(old), Some(new)) => format!("{old:>4} {new:>4}"),
+                    (Some(old), None) => format!("{old:>4}     "),
+                    (None, Some(new)) => format!("     {new:>4}"),
+                    (None, None) => String::new(),
+                };
+                let mut row = h_flex()
                     .min_w_full()
-                    .whitespace_nowrap()
                     .px_2()
-                    .text_sm()
-                    .text_color(color);
+                    .gap_2()
+                    .items_start();
                 if let Some(bg) = bg {
-                    element = element.bg(bg);
+                    row = row.bg(bg);
                 }
-                element.child(line.to_string()).into_any_element()
+                row.child(
+                    div()
+                        .w(px(56.))
+                        .flex_none()
+                        .text_xs()
+                        .text_color(theme.text_muted)
+                        .child(numbers),
+                )
+                .child(
+                    div()
+                        .whitespace_nowrap()
+                        .text_sm()
+                        .text_color(color)
+                        .child(line),
+                )
+                .into_any_element()
             })
             .collect();
 
@@ -5364,6 +5383,66 @@ fn split_subject_body(message: &str) -> (String, String) {
     (subject, body.trim().to_string())
 }
 
+/// Parses the new-file start line out of a unified-diff hunk header
+/// (`@@ -a,b +c,d @@`), returning `(old_start, new_start)`.
+fn parse_hunk_header(line: &str) -> Option<(usize, usize)> {
+    let rest = line.strip_prefix("@@")?;
+    let mut parts = rest.split_whitespace();
+    let old = parts.next()?.strip_prefix('-')?;
+    let new = parts.next()?.strip_prefix('+')?;
+    let old_start = old.split(',').next()?.parse().ok()?;
+    let new_start = new.split(',').next()?.parse().ok()?;
+    Some((old_start, new_start))
+}
+
+/// Assigns old/new line numbers to each line of a unified diff. Numbers are
+/// `None` for headers and hunk markers.
+fn number_diff_lines(text: &str) -> Vec<(Option<usize>, Option<usize>, String)> {
+    let mut result = Vec::new();
+    let mut old_no = 0;
+    let mut new_no = 0;
+    for line in text.lines() {
+        if line.starts_with("@@") {
+            if let Some((old_start, new_start)) = parse_hunk_header(line) {
+                old_no = old_start;
+                new_no = new_start;
+            }
+            result.push((None, None, line.to_string()));
+        } else if is_diff_header(line) {
+            result.push((None, None, line.to_string()));
+        } else if line.starts_with('+') {
+            result.push((None, Some(new_no), line.to_string()));
+            new_no += 1;
+        } else if line.starts_with('-') {
+            result.push((Some(old_no), None, line.to_string()));
+            old_no += 1;
+        } else if line.starts_with(' ') {
+            result.push((Some(old_no), Some(new_no), line.to_string()));
+            old_no += 1;
+            new_no += 1;
+        } else {
+            result.push((None, None, line.to_string()));
+        }
+    }
+    result
+}
+
+fn is_diff_header(line: &str) -> bool {
+    line.starts_with("+++")
+        || line.starts_with("---")
+        || line.starts_with("diff ")
+        || line.starts_with("index ")
+        || line.starts_with("new file")
+        || line.starts_with("deleted file")
+        || line.starts_with("old mode")
+        || line.starts_with("new mode")
+        || line.starts_with("similarity")
+        || line.starts_with("rename ")
+        || line.starts_with("copy ")
+        || line.starts_with("Binary files")
+        || line.starts_with("\\ No newline")
+}
+
 /// Renders a git `--date=iso` string for the Date column: the short form keeps
 /// only the date, the full form drops seconds and the timezone offset.
 fn format_date(iso: &str, short: bool) -> String {
@@ -6147,6 +6226,34 @@ mod tests {
         assert!((top - (500.0 - 500.0 * 500.0 / 1500.0)).abs() < 0.1);
         // No scrolling: full-height thumb.
         assert_eq!(scrollbar_thumb(0.0, 0.0, 400.0), (0.0, 400.0));
+    }
+
+    #[test]
+    fn numbers_unified_diff_lines() {
+        assert_eq!(parse_hunk_header("@@ -1,3 +10,4 @@ fn x()"), Some((1, 10)));
+        assert_eq!(parse_hunk_header("@@ -5 +6 @@"), Some((5, 6)));
+        assert_eq!(parse_hunk_header("not a hunk"), None);
+
+        let diff = "diff --git a/f b/f\nindex 1..2\n--- a/f\n+++ b/f\n@@ -1,3 +1,3 @@\n context\n-old\n+new\n tail\n";
+        let numbered = number_diff_lines(diff);
+        let tail: Vec<(Option<usize>, Option<usize>, &str)> = numbered
+            .iter()
+            .map(|(old, new, line)| (*old, *new, line.as_str()))
+            .collect();
+        assert_eq!(
+            tail,
+            vec![
+                (None, None, "diff --git a/f b/f"),
+                (None, None, "index 1..2"),
+                (None, None, "--- a/f"),
+                (None, None, "+++ b/f"),
+                (None, None, "@@ -1,3 +1,3 @@"),
+                (Some(1), Some(1), " context"),
+                (Some(2), None, "-old"),
+                (None, Some(2), "+new"),
+                (Some(3), Some(3), " tail"),
+            ]
+        );
     }
 
     fn changed(path: &str) -> ChangedFile {
