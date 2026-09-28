@@ -5226,6 +5226,31 @@ impl GraphView {
 }
 
 /// Row rendering context so the `uniform_list` closure can be `'static`.
+/// The tooltip shown when hovering a commit row.
+struct CommitTooltip {
+    lines: Vec<String>,
+    theme: Theme,
+}
+
+impl Render for CommitTooltip {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        v_flex()
+            .max_w(px(480.))
+            .px_2()
+            .py_1()
+            .gap_0p5()
+            .bg(self.theme.panel)
+            .border_1()
+            .border_color(self.theme.border)
+            .rounded_md()
+            .children(
+                self.lines
+                    .iter()
+                    .map(|line| div().text_sm().text_color(self.theme.text).child(line.clone())),
+            )
+    }
+}
+
 struct RowRenderContext {
     commits: Arc<Vec<Commit>>,
     /// Number of lanes (max lane + 1), for sizing the graph gutter.
@@ -5423,11 +5448,32 @@ impl RowRenderContext {
             format_date(&date, self.date_short)
         };
 
+        let mut tip_lines = vec![commit.subject.clone()];
+        tip_lines.push(format!("{} · {}", commit.author, commit.author_date));
+        tip_lines.push(if commit.refs.is_empty() {
+            "no refs".to_string()
+        } else {
+            commit.refs.join(", ")
+        });
+        tip_lines.push(if self.head_ancestors.contains(&commit.sha) {
+            "in HEAD".to_string()
+        } else {
+            "not in HEAD".to_string()
+        });
+        let tip_theme = theme.clone();
+
         div()
             .flex()
             .flex_row()
             .items_stretch()
             .id(("commit", index))
+            .tooltip(move |_window, cx| {
+                let tooltip = CommitTooltip {
+                    lines: tip_lines.clone(),
+                    theme: tip_theme.clone(),
+                };
+                cx.new(|_| tooltip).into()
+            })
             .min_h(px(ROW_HEIGHT))
             .w_full()
             .when(
