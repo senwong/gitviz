@@ -127,7 +127,7 @@ script/build       cargo 包装脚本
   - [x] 过滤面板（点击选择分支，客户端过滤）
   - [x] `Show All` 已做；custom glob patterns（`glob_match` + 设置/命令面板 “Add branch glob…” + `.gitviz.conf`）
 - 查找（Find）
-  - [x] 文案搜索（提交信息/作者/哈希），Cmd+F
+  - [x] 文案搜索（提交信息含正文/作者/哈希/日期/ref 名），Cmd+F
   - [x] 高亮匹配（⌘G 导航）、date/ref 名称匹配
 - 仓库设置
   - [x] remotes 查看/增删改/fetch/prune

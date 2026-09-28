@@ -217,6 +217,7 @@ mod tests {
             author_date: String::new(),
             commit_date: String::new(),
             subject: "subject".to_string(),
+            body: String::new(),
             lane: 0,
             through: Vec::new(),
             incoming: Vec::new(),

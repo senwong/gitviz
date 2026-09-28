@@ -78,6 +78,33 @@ fn reads_log_status_and_branches() {
 }
 
 #[test]
+fn reads_commit_body() {
+    let repo = TempRepo::new("body");
+    std::fs::write(repo.path.join("a.txt"), "1\n").unwrap();
+    git_run(&repo.path, &["add", "-A"]);
+    git_run(
+        &repo.path,
+        &[
+            "commit",
+            "-q",
+            "-m",
+            "subject line",
+            "-m",
+            "body line one\nbody line two",
+        ],
+    );
+
+    let commits = git::log(&repo.path, 10, &LogFilter::default()).unwrap();
+    assert_eq!(commits.len(), 1);
+    assert_eq!(commits[0].subject, "subject line");
+    assert!(
+        commits[0].body.contains("body line one") && commits[0].body.contains("body line two"),
+        "body was: {:?}",
+        commits[0].body
+    );
+}
+
+#[test]
 fn branch_tag_and_commit_operations() {
     let repo = TempRepo::new("ops");
     repo.commit("a.txt", "1\n", "one");

@@ -66,6 +66,8 @@
 - 批次 26（A 项）：**相对日期**（“3 days ago”，设置面板 “Relative dates”，`relative_time` 纯函数）。**新增 `relative_time` 分档单测**
 - 批次 27（A 项）：**悬浮包含信息补充 stash**——`git::stashes_containing`（`merge-base --is-ancestor` 遍历 stash），`Containment` 增加 `stashes` 并显示在底部信息条。**新增 `stashes_containing_reports_ancestor_commits` 集成测试**
 - 批次 28（A 项）：**自定义 PR Provider 模板**——`.gitviz.conf` 的 `pr_provider`（占位符 `{host}/{owner}/{repo}/{base}/{head}`），非空时优先于内置 provider。**新增 `render_pr_template` 单测、config 往返扩展**
+- 批次 29（A 项）：**提交正文（body）**——`Commit` 增加 `body`，`git log` 改用记录分隔符解析多行 body；Find 现在也搜索正文。**新增 `reads_commit_body` 集成测试、find 测试扩展**
+- 说明：既然 `git log` 的解析从“逐行”改为“按记录分隔符”，需在 build 时重点验证 log 解析（见“编译时预计要修的点”）
 
 ## 文件结构
 

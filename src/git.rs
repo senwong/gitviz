@@ -7,6 +7,7 @@ use std::path::Path;
 use std::process::Command;
 
 const RECORD_SEP: char = '\u{1f}';
+const RECORD_END: char = '\u{1e}';
 
 #[derive(Clone, Debug)]
 pub struct Commit {
@@ -19,6 +20,8 @@ pub struct Commit {
     pub author_date: String,
     pub commit_date: String,
     pub subject: String,
+    /// Full commit message body (everything after the subject).
+    pub body: String,
     /// Assigned by [`crate::layout::assign_lanes`].
     pub lane: usize,
     /// Lanes with a line passing straight through this row.
@@ -145,7 +148,7 @@ pub fn head_branch(repo: &Path) -> Option<String> {
 /// Loads up to `limit` commits, newest first, in date order.
 pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<Commit>> {
     let format = format!(
-        "--format=%H{RECORD_SEP}%P{RECORD_SEP}%D{RECORD_SEP}%an{RECORD_SEP}%at{RECORD_SEP}%ct{RECORD_SEP}%ad{RECORD_SEP}%cd{RECORD_SEP}%s"
+        "--format=%H{RECORD_SEP}%P{RECORD_SEP}%D{RECORD_SEP}%an{RECORD_SEP}%at{RECORD_SEP}%ct{RECORD_SEP}%ad{RECORD_SEP}%cd{RECORD_SEP}%s{RECORD_SEP}%b{RECORD_END}"
     );
     let limit_arg = format!("-n{limit}");
 
@@ -169,11 +172,12 @@ pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<
     let text = run(repo, &arg_refs)?;
 
     let mut commits = Vec::new();
-    for line in text.lines() {
-        if line.is_empty() {
+    for record in text.split(RECORD_END) {
+        let record = record.trim_matches('\n');
+        if record.is_empty() {
             continue;
         }
-        let mut fields = line.split(RECORD_SEP);
+        let mut fields = record.split(RECORD_SEP);
         let sha = fields.next().unwrap_or_default().to_string();
         let parents = fields
             .next()
@@ -194,6 +198,7 @@ pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<
         let author_date = fields.next().unwrap_or_default().to_string();
         let commit_date = fields.next().unwrap_or_default().to_string();
         let subject = fields.next().unwrap_or_default().to_string();
+        let body = fields.next().unwrap_or_default().trim().to_string();
         commits.push(Commit {
             sha,
             parents,
@@ -204,6 +209,7 @@ pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<
             author_date,
             commit_date,
             subject,
+            body,
             lane: 0,
             through: Vec::new(),
             incoming: Vec::new(),

@@ -270,6 +270,7 @@ fn find_matches(commits: &[Commit], query: &str) -> Vec<usize> {
         .enumerate()
         .filter(|(_, commit)| {
             commit.subject.to_lowercase().contains(&query)
+                || commit.body.to_lowercase().contains(&query)
                 || commit.author.to_lowercase().contains(&query)
                 || commit.sha.starts_with(&query)
                 || commit.author_date.to_lowercase().contains(&query)
@@ -4110,6 +4111,7 @@ mod tests {
             author_date: String::new(),
             commit_date: String::new(),
             subject: subject.to_string(),
+            body: String::new(),
             lane: 0,
             through: Vec::new(),
             incoming: Vec::new(),
@@ -4154,6 +4156,7 @@ mod tests {
         let mut first = commit("abc123", "Fix SEO", "Sen");
         first.author_date = "2024-05-01 10:00".to_string();
         first.refs = vec!["v1.2.0".to_string()];
+        first.body = "Closes the indexing regression".to_string();
         let commits = vec![first, commit("def456", "Add graph", "Alice")];
 
         assert_eq!(find_matches(&commits, "seo"), vec![0]);
@@ -4161,6 +4164,7 @@ mod tests {
         assert_eq!(find_matches(&commits, "abc"), vec![0]);
         assert_eq!(find_matches(&commits, "2024-05-01"), vec![0]);
         assert_eq!(find_matches(&commits, "v1.2"), vec![0]);
+        assert_eq!(find_matches(&commits, "indexing"), vec![0]);
         assert!(find_matches(&commits, "").is_empty());
     }
 
