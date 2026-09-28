@@ -3165,9 +3165,17 @@ impl GraphView {
 
         if let Some(info) = remote {
             let url = info.commit_url(&sha_string);
+            let url_for_open = url.clone();
             buttons.push(
                 action_button("open-remote", "Open on Remote", &theme, move |_cx| {
-                    let _ = git::open_url(&url);
+                    let _ = git::open_url(&url_for_open);
+                })
+                .into_any_element(),
+            );
+            let url_for_copy = url;
+            buttons.push(
+                action_button("copy-remote-url", "Copy Link", &theme, move |cx| {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(url_for_copy.clone()));
                 })
                 .into_any_element(),
             );
