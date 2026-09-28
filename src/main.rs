@@ -21,12 +21,14 @@ use gpui::{
 use gpui_platform::application;
 
 fn main() {
+    // `--head` selects the HEAD commit on load (handy for screencasts/scripts).
+    let select_head = std::env::args().any(|arg| arg == "--head");
     let roots: Vec<PathBuf> = {
         // macOS passes `-psn_<...>` when an app is launched from Finder/`open`;
         // it is not a path.
         let args: Vec<PathBuf> = std::env::args()
             .skip(1)
-            .filter(|arg| !arg.starts_with("-psn_"))
+            .filter(|arg| !arg.starts_with("-psn_") && !arg.starts_with("--"))
             .map(Into::into)
             .collect();
         if args.is_empty() {
@@ -49,7 +51,7 @@ fn main() {
                 ..Default::default()
             },
             move |window, cx| {
-                cx.new(|cx| view::GraphView::new(repos, search_roots, window, cx))
+                cx.new(|cx| view::GraphView::new(repos, search_roots, select_head, window, cx))
             },
         )
         .expect("failed to open window");

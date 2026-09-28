@@ -96,13 +96,15 @@ pub struct GraphView {
     detail_loading: bool,
     caret_on: bool,
     branch: Option<String>,
-    commits: Vec<Commit>,
+    commits: Arc<Vec<Commit>>,
+    /// Max lane + 1, cached when rows are rebuilt (used to size the graph).
+    lane_count: usize,
     rows: Vec<RowKind>,
     rows_dirty: bool,
     error: Option<String>,
-    head_ancestors: HashSet<String>,
-    status: Vec<StatusEntry>,
-    stashes: Vec<StashEntry>,
+    head_ancestors: Arc<HashSet<String>>,
+    status: Arc<Vec<StatusEntry>>,
+    stashes: Arc<Vec<StashEntry>>,
     selected: Option<RowKind>,
     compare: Option<usize>,
     compare_worktree: bool,
@@ -160,6 +162,7 @@ pub struct GraphView {
     settings_open: bool,
     search_active: bool,
     search_query: String,
+    search_dirty: bool,
     emoji_enabled: bool,
     markdown_enabled: bool,
     combine_refs: bool,
@@ -299,9 +302,13 @@ fn near_bottom(offset_y: f32, max_offset_y: f32, threshold: f32) -> bool {
 
 fn find_head_commit_index(commits: &[Commit], branch: Option<&str>) -> Option<usize> {
     let branch = branch?;
-    commits
-        .iter()
-        .position(|commit| commit.refs.iter().any(|ref_name| ref_name == branch))
+    let head_ref = format!("HEAD -> {branch}");
+    commits.iter().position(|commit| {
+        commit
+            .refs
+            .iter()
+            .any(|ref_name| ref_name == branch || ref_name == &head_ref)
+    })
 }
 
 fn find_matches(commits: &[Commit], query: &str) -> Vec<usize> {
@@ -548,6 +555,7 @@ impl GraphView {
     pub fn new(
         repos: Vec<Repo>,
         roots: Vec<std::path::PathBuf>,
+        select_head: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -569,13 +577,14 @@ impl GraphView {
             detail_loading: false,
             caret_on: true,
             branch: None,
-            commits: Vec::new(),
+            commits: Arc::new(Vec::new()),
+            lane_count: 1,
             rows: Vec::new(),
             rows_dirty: true,
             error: None,
-            head_ancestors: HashSet::new(),
-            status: Vec::new(),
-            stashes: Vec::new(),
+            head_ancestors: Arc::new(HashSet::new()),
+            status: Arc::new(Vec::new()),
+            stashes: Arc::new(Vec::new()),
             selected: None,
             compare: None,
             compare_worktree: false,
@@ -601,7 +610,7 @@ impl GraphView {
             date_short: false,
             relative_dates: false,
             resize_drag: None,
-            scroll_to_head_on_load: false,
+            scroll_to_head_on_load: select_head,
             list_state: ListState::new(0, ListAlignment::Top, px(1000.)),
             pending_scroll: None,
             date_width: 150.,
@@ -643,6 +652,7 @@ impl GraphView {
             settings_open: false,
             search_active: false,
             search_query: String::new(),
+            search_dirty: true,
             emoji_enabled: true,
             markdown_enabled: true,
             combine_refs: true,
@@ -695,7 +705,7 @@ impl GraphView {
     // -- data -------------------------------------------------------------
 
     fn load(&mut self, cx: &mut Context<Self>) {
-        self.commits.clear();
+        self.commits = Arc::new(Vec::new());
         self.error = None;
         self.branch = None;
         self.detail = None;
@@ -705,9 +715,9 @@ impl GraphView {
         self.compare_worktree = false;
         self.compare_files.clear();
         self.selected = None;
-        self.head_ancestors.clear();
-        self.status.clear();
-        self.stashes.clear();
+        self.head_ancestors = Arc::new(HashSet::new());
+        self.status = Arc::new(Vec::new());
+        self.stashes = Arc::new(Vec::new());
         self.branch_tracking.clear();
         self.signature = None;
         self.signature_details = None;
@@ -785,27 +795,29 @@ impl GraphView {
     fn apply_load(&mut self, result: LoadResult, cx: &mut Context<Self>) {
         self.loading = false;
         self.branch = result.branch;
-        self.head_ancestors = result.head_ancestors;
+        self.head_ancestors = Arc::new(result.head_ancestors);
         self.branch_filter.all = result.local_branches;
         self.remotes = result.remotes;
         self.remote_info = result.remote_info;
         self.tags = result.tags;
-        self.status = result.status;
-        self.stashes = result.stashes;
+        self.status = Arc::new(result.status);
+        self.stashes = Arc::new(result.stashes);
         match result.commits {
             Ok(commits) => {
-                self.commits = commits;
+                self.commits = Arc::new(commits);
                 if self.scroll_to_head_on_load
                     && let Some(index) =
                         find_head_commit_index(&self.commits, self.branch.as_deref())
                 {
                     self.selected = Some(RowKind::Commit(index));
                     self.pending_scroll = Some(RowKind::Commit(index));
+                    self.load_detail(index, cx);
                 }
             }
             Err(error) => self.error = Some(error),
         }
         self.rows_dirty = true;
+        self.search_dirty = true;
         cx.notify();
     }
 
@@ -847,6 +859,7 @@ impl GraphView {
             rows.push(RowKind::Commit(index));
         }
         self.rows = rows;
+        self.lane_count = self.commits.iter().map(|commit| commit.lane).max().unwrap_or(0) + 1;
         // Rows can have different heights (ref labels wrap), so use a
         // variable-height list and reset it whenever the row set changes.
         self.list_state = ListState::new(self.rows.len(), ListAlignment::Top, px(1000.));
@@ -1285,11 +1298,13 @@ impl GraphView {
                 "escape" | "enter" => self.search_active = false,
                 "backspace" => {
                     self.search_query.pop();
+                    self.search_dirty = true;
                     self.rows_dirty = true;
                 }
                 _ => {
                     if let Some(character) = &keystroke.key_char {
                         self.search_query.push_str(character);
+                        self.search_dirty = true;
                         self.rows_dirty = true;
                     }
                 }
@@ -1959,15 +1974,18 @@ impl Render for GraphView {
         {
             self.list_state.scroll_to_reveal_item(position);
         }
-        if !self.search_query.is_empty() {
-            self.matches = find_matches(&self.commits, &self.search_query);
-            if self.match_cursor >= self.matches.len() {
+        if self.search_dirty {
+            if !self.search_query.is_empty() {
+                self.matches = find_matches(&self.commits, &self.search_query);
+                if self.match_cursor >= self.matches.len() {
+                    self.match_cursor = 0;
+                }
+            } else {
+                // Clearing the query clears any stale match highlights.
+                self.matches.clear();
                 self.match_cursor = 0;
             }
-        } else if !self.matches.is_empty() {
-            // Clearing the query clears any stale match highlights.
-            self.matches.clear();
-            self.match_cursor = 0;
+            self.search_dirty = false;
         }
         // Automatically load more commits when scrolled near the bottom.
         if self.loaded < COMMIT_LIMIT && self.commits.len() >= self.loaded {
@@ -2070,10 +2088,10 @@ impl Render for GraphView {
 
         // rows
         let row_ctx = RowRenderContext {
-            commits: Arc::new(self.commits.clone()),
-            lane_count: self.commits.iter().map(|commit| commit.lane).max().unwrap_or(0) + 1,
-            status: Arc::new(self.status.clone()),
-            stashes: Arc::new(self.stashes.clone()),
+            commits: self.commits.clone(),
+            lane_count: self.lane_count,
+            status: self.status.clone(),
+            stashes: self.stashes.clone(),
             rows: Arc::new(self.rows.clone()),
             selected: self.selected,
             hovered: self.hovered,
@@ -2614,7 +2632,11 @@ impl GraphView {
                     .text_color(theme.text_muted)
                     .border_t_1()
                     .border_color(theme.border)
-                    .child(format!("{} files changed", files.len())),
+                    .child(if files.len() == 1 {
+                        "1 file changed".to_string()
+                    } else {
+                        format!("{} files changed", files.len())
+                    }),
             )
             .child(
                 v_flex()
@@ -2955,10 +2977,7 @@ impl GraphView {
 
     fn render_column_header(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
         let theme = self.theme.clone();
-        let lane_area = (self.commits.iter().map(|commit| commit.lane).max().unwrap_or(0) + 1)
-            as f32
-            * LANE_WIDTH
-            + 8.;
+        let lane_area = self.lane_count as f32 * LANE_WIDTH + 8.;
 
         let handle = |column: ResizeColumn, width: f32, weak: gpui::WeakEntity<Self>| {
             let id = match column {
@@ -4000,7 +4019,7 @@ impl GraphView {
             cx.notify();
             return;
         };
-                self.status = git::status(&repo.path, self.include_untracked);
+                self.status = Arc::new(git::status(&repo.path, self.include_untracked));
                 self.rows_dirty = true;
             }
             "emoji" => self.emoji_enabled = !self.emoji_enabled,
@@ -4532,7 +4551,7 @@ struct RowRenderContext {
     selected: Option<RowKind>,
     hovered: Option<RowKind>,
     compare: Option<usize>,
-    head_ancestors: HashSet<String>,
+    head_ancestors: Arc<HashSet<String>>,
     theme: Theme,
     lane_colors: [gpui::Rgba; 8],
     emoji_enabled: bool,
@@ -5445,6 +5464,10 @@ mod tests {
         let commits = vec![commit("b", "B", "x"), with_ref];
         assert_eq!(find_head_commit_index(&commits, Some("main")), Some(1));
         assert_eq!(find_head_commit_index(&commits, None), None);
+        // `git log --decorate` renders the current branch as `HEAD -> main`.
+        let mut head = commit("c", "C", "x");
+        head.refs = vec!["HEAD -> main".to_string()];
+        assert_eq!(find_head_commit_index(&[head], Some("main")), Some(0));
     }
 
     #[test]
