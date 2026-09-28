@@ -1130,11 +1130,21 @@ impl GraphView {
                     return;
                 }
                 "f" => self.search_active = !self.search_active,
+                "b" => {
+                    self.branch_filter.open = !self.branch_filter.open;
+                    if self.branch_filter.open {
+                        self.ensure_branch_tracking();
+                    }
+                }
+                "," => self.settings_open = !self.settings_open,
                 "r" => {
                     self.load(cx);
                     return;
                 }
-                "t" => self.theme = self.theme.toggled(),
+                "t" => {
+                    self.theme = self.theme.toggled();
+                    crate::workspace::save_theme(self.theme.name);
+                }
                 "s" => self.step_stash(if keystroke.modifiers.shift { -1 } else { 1 }),
                 "h" => self.scroll_to_head(),
                 "q" => {
