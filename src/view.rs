@@ -4136,23 +4136,27 @@ impl GraphView {
             .text
             .lines()
             .map(|line| {
-                let color = if line.starts_with("+++") || line.starts_with("---") {
-                    theme.text_muted
+                let (color, bg) = if line.starts_with("+++") || line.starts_with("---") {
+                    (theme.text_muted, None)
                 } else if line.starts_with('+') {
-                    theme.tag
+                    (theme.tag, Some(gpui::rgba(0x3fb95026)))
                 } else if line.starts_with('-') {
-                    theme.error
+                    (theme.error, Some(gpui::rgba(0xf8514926)))
                 } else if line.starts_with("@@") {
-                    theme.accent
+                    (theme.accent, None)
                 } else {
-                    theme.text_muted
+                    (theme.text_muted, None)
                 };
-                div()
+                let mut element = div()
+                    .min_w_full()
                     .whitespace_nowrap()
+                    .px_2()
                     .text_sm()
-                    .text_color(color)
-                    .child(line.to_string())
-                    .into_any_element()
+                    .text_color(color);
+                if let Some(bg) = bg {
+                    element = element.bg(bg);
+                }
+                element.child(line.to_string()).into_any_element()
             })
             .collect();
 
