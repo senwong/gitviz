@@ -35,6 +35,8 @@ pub struct RepoConfig {
     pub graph_style: String,
     /// Custom Pull Request URL template (empty = use the built-in providers).
     pub pr_provider: String,
+    /// Custom Issue URL template (empty = use the built-in providers).
+    pub issue_provider: String,
 }
 
 impl Default for RepoConfig {
@@ -61,6 +63,7 @@ impl Default for RepoConfig {
             emoji_mappings: Vec::new(),
             graph_style: "rounded".to_string(),
             pr_provider: String::new(),
+            issue_provider: String::new(),
         }
     }
 }
@@ -114,6 +117,7 @@ impl RepoConfig {
                 }
                 "graph_style" => config.graph_style = value.to_string(),
                 "pr_provider" => config.pr_provider = value.to_string(),
+                "issue_provider" => config.issue_provider = value.to_string(),
                 _ => {}
             }
         }
@@ -153,6 +157,7 @@ impl RepoConfig {
         ));
         output.push_str(&format!("graph_style={}\n", self.graph_style));
         output.push_str(&format!("pr_provider={}\n", self.pr_provider));
+        output.push_str(&format!("issue_provider={}\n", self.issue_provider));
         std::fs::write(Self::path(repo), output)?;
         Ok(())
     }
@@ -190,6 +195,7 @@ mod tests {
         config.emoji_mappings = vec!["shipit:🚢".to_string()];
         config.graph_style = "angular".to_string();
         config.pr_provider = "https://git.example.com/{owner}/{repo}/compare/{base}...{head}".to_string();
+        config.issue_provider = "https://bugs.example.com/{issue}".to_string();
         config.save(&dir).unwrap();
 
         let loaded = RepoConfig::load(&dir).unwrap();
@@ -205,6 +211,7 @@ mod tests {
             loaded.pr_provider,
             "https://git.example.com/{owner}/{repo}/compare/{base}...{head}"
         );
+        assert_eq!(loaded.issue_provider, "https://bugs.example.com/{issue}");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -793,6 +793,22 @@ pub fn render_pr_template(
         .replace("{head}", head)
 }
 
+/// Expands a custom Issue URL template. Supported placeholders: `{host}`,
+/// `{owner}`, `{repo}` and `{issue}`.
+pub fn render_issue_template(
+    template: &str,
+    host: &str,
+    owner: &str,
+    repo: &str,
+    issue: &str,
+) -> String {
+    template
+        .replace("{host}", host)
+        .replace("{owner}", owner)
+        .replace("{repo}", repo)
+        .replace("{issue}", issue)
+}
+
 impl RemoteInfo {
     pub fn web_url(&self) -> String {
         format!("https://{}/{}/{}", self.host, self.owner, self.repo)
@@ -1064,6 +1080,20 @@ mod tests {
         assert_eq!(
             render_pr_template("{owner}/{unknown}", "h", "acme", "r", "b", "x"),
             "acme/{unknown}"
+        );
+    }
+
+    #[test]
+    fn issue_template_fills_placeholders() {
+        assert_eq!(
+            render_issue_template(
+                "https://bugs.example.com/{owner}/{repo}/issues/{issue}",
+                "bugs.example.com",
+                "acme",
+                "widget",
+                "42"
+            ),
+            "https://bugs.example.com/acme/widget/issues/42"
         );
     }
 }
