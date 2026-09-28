@@ -3764,11 +3764,7 @@ impl GraphView {
                             let _ = window;
                             weak.update(cx, |this, cx| this.toggle_setting(id, cx)).ok();
                         })
-                        .child(
-                            div()
-                                .text_color(if on { theme.accent } else { theme.text_muted })
-                                .child(if on { "[x]" } else { "[ ]" }),
-                        )
+                        .child(toggle_switch(on, &theme))
                         .child(div().text_color(theme.text).child(label))
                         .into_any_element()
                 }),
@@ -4269,6 +4265,32 @@ fn action_button(
         .hover(move |this| this.bg(hover_color))
         .on_click(move |_: &ClickEvent, _window, cx| handler(cx))
         .child(label)
+}
+
+/// A small on/off switch (static, no animation).
+fn toggle_switch(on: bool, theme: &Theme) -> AnyElement {
+    let track = if on { theme.accent } else { theme.border };
+    let knob_left = if on { 18.0 } else { 2.0 };
+    div()
+        .w(px(36.))
+        .h(px(20.))
+        .flex_none()
+        .rounded_full()
+        .bg(track)
+        .relative()
+        .child(
+            div()
+                .absolute()
+                .left(px(knob_left))
+                .top(px(2.))
+                .w(px(16.))
+                .h(px(16.))
+                .rounded_full()
+                .bg(gpui::rgb(0xffffff))
+                .border_1()
+                .border_color(theme.border),
+        )
+        .into_any_element()
 }
 
 /// A section heading inside a panel.
