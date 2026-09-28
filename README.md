@@ -17,9 +17,8 @@
 
 - macOS
 - [rustup](https://rustup.rs)（本仓库 `rust-toolchain.toml` 固定 `1.98.1`）
-- 本地存在 Zed 源码 checkout，路径为本仓库的 `../zed`
-  （即 `/Users/<you>/projects/zed`）。`gpui` 尚未作为通用 SDK 发布，
-  这里通过 path 依赖直接引用它。
+- 网络（首次构建时）。`gpui` 尚未作为通用 SDK 发布到 crates.io，本仓库通过
+  **git 依赖**固定到 Zed 仓库的一个 commit 来引用它，因此**不依赖任何本地 checkout**（无需 `../zed`）。
 
 > 构建会编译 `gpui` 及其依赖树，**比较消耗 CPU 和内存**。
 > 建议放在非工作时段跑。
@@ -148,11 +147,13 @@ script/build       cargo 包装脚本
 
 ## 与 Zed 的关系
 
-本仓库只依赖 Zed 的 UI 层：
+本仓库**只依赖 Zed 的 UI 框架层**，且通过 git 依赖固定到一个 commit：
 
 ```toml
-gpui = { path = "../zed/crates/gpui", default-features = false, features = ["font-kit", "stacker"] }
-gpui_platform = { path = "../zed/crates/gpui_platform", default-features = false, features = ["font-kit"] }
+gpui = { git = "https://github.com/zed-industries/zed", rev = "a8535d86b7c4f8061c35b1802734be33201d815b", default-features = false, features = ["font-kit", "stacker"] }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "a8535d86b7c4f8061c35b1802734be33201d815b", default-features = false, features = ["font-kit"] }
 ```
 
-因此需要保证 `../zed` 存在且与其 `rust-toolchain.toml`（1.98.1）一致。
+- **不依赖任何本地仓库**（无需 `../zed`）。
+- 首次构建时 cargo 会克隆 Zed 仓库到 `~/.cargo/git`（仅构建 `gpui` 及其依赖）。
+- 想跟随自己的 Zed fork 时，把 `git`/`rev` 换成你的 fork 与其 commit 即可。

@@ -7,12 +7,15 @@ description = "A standalone, multi-repository git graph viewer built on gpui."
 
 [workspace]
 
+# gpui is not published on crates.io, so it is pulled from the Zed repository
+# at a pinned revision. This keeps gitviz a self-contained repository with no
+# dependency on any local checkout.
 [dependencies]
-gpui = { path = "../zed/crates/gpui", default-features = false, features = [
+gpui = { git = "https://github.com/zed-industries/zed", rev = "a8535d86b7c4f8061c35b1802734be33201d815b", default-features = false, features = [
     "font-kit",
     "stacker",
 ] }
-gpui_platform = { path = "../zed/crates/gpui_platform", default-features = false, features = [
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "a8535d86b7c4f8061c35b1802734be33201d815b", default-features = false, features = [
     "font-kit",
 ] }
 anyhow = "1"

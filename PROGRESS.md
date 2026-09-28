@@ -12,7 +12,7 @@
 
 - 本地：`~/projects/gitviz`
 - 远端：`https://github.com/senwong/gitviz`（默认分支 `main`，`origin`）
-- 依赖：`gpui` / `gpui_platform` 通过 **path** 引用本地 Zed：`../zed/crates/...`
+- 依赖：`gpui` / `gpui_platform` 通过 **git 依赖**固定到 Zed 仓库的 commit（上游 `zed-industries/zed`），**不依赖任何本地仓库**，也无需 `../zed`
   （`gpui` 未作为通用 SDK 发布，必须依赖本地 Zed checkout）
 - 工具链：`rust-toolchain.toml` 固定 `1.98.1`（与 Zed 一致）
 - 构建脚本：`script/build`（用 rustup 工具链，默认 `CARGO_INCREMENTAL=0`）
@@ -52,7 +52,7 @@
 ## 文件结构
 
 ```
-Cargo.toml          gpui / gpui_platform path 依赖；edition 2024
+Cargo.toml          gpui / gpui_platform git 依赖（固定 rev）；edition 2024
 rust-toolchain.toml 1.98.1
 script/build        cargo 包装（rustup + 关闭 incremental）
 src/main.rs         启动 gpui、解析路径、开窗口
