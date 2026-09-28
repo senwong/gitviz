@@ -1,7 +1,7 @@
 //! A standalone, multi-repository git graph viewer built on gpui.
 //!
 //! Usage:
-//!   git-graph [PATH ...]
+//!   gitviz [PATH ...]
 //!
 //! Each PATH may be a repository or a directory containing repositories. With
 //! no arguments the current directory is used. Press Cmd+P to search and switch
