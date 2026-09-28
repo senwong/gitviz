@@ -455,10 +455,8 @@ fn pulls_from_a_remote() {
     let local = TempRepo::new("pull-dst");
     git::add_remote(&local.path, "origin", bare.to_str().unwrap()).unwrap();
     git_run(&local.path, &["fetch", "origin"]);
-    git_run(
-        &local.path,
-        &["branch", "--set-upstream-to=origin/main", "main"],
-    );
+    // The local branch is unborn, so create it at origin/main and set upstream.
+    git_run(&local.path, &["checkout", "-B", "main", "origin/main"]);
 
     origin.commit("b.txt", "2\n", "two");
     git_run(&origin.path, &["push", "-q", bare.to_str().unwrap(), "main"]);
