@@ -110,6 +110,7 @@ script/build       cargo 包装脚本
   - [x] 签名状态、mailmap（开关）
 - 提交对比
   - [x] Cmd/Ctrl 点击第二个提交进入对比，列出差异文件
+  - [x] 选中 Uncommitted Changes 后 Cmd/Ctrl 点击提交 → 工作区与该提交对比
   - [x] 对比视图打开文件 diff
 - 代码审查（Code Review）
   - [x] 已审查文件标记（`[x]`/`[ ]`）；进行中的审查中，未看文件加粗，查看 diff / 打开文件后自动去掉加粗

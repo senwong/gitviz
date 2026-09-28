@@ -115,6 +115,22 @@ fn creates_annotated_tag_with_message() {
 }
 
 #[test]
+fn diffs_working_tree_against_a_commit() {
+    let repo = TempRepo::new("worktree");
+    repo.commit("a.txt", "one\n", "one");
+    let head = git::log(&repo.path, 1, &LogFilter::default()).unwrap()[0]
+        .sha
+        .clone();
+
+    std::fs::write(repo.path.join("a.txt"), "one\ntwo\n").unwrap();
+    let files = git::working_tree_files(&repo.path, &head);
+    assert!(files.iter().any(|file| file.path == "a.txt"));
+
+    let diff = git::working_tree_file_diff(&repo.path, &head, "a.txt");
+    assert!(diff.contains("+two"), "diff was: {diff}");
+}
+
+#[test]
 fn stash_workflow() {
     let repo = TempRepo::new("stash");
     repo.commit("a.txt", "1\n", "one");

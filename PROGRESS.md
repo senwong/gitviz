@@ -60,6 +60,7 @@
 - 批次 20（A 项）：**悬浮包含信息**——hover 提交时懒计算并缓存 `git branch --contains` / `git tag --contains`（`Containment`），底部信息条追加 “contained in: …”；切换/刷新仓库时清缓存
 - 批次 21（A 项）：**分支面板新增 Merge / Rebase**（`git merge <branch>` / `git rebase <branch>`，沿用已有 git 实现）。**新增 `pulls_from_a_remote` 集成测试**（覆盖此前未测的 `git::pull`）
 - 批次 22（A 项）：**创建 annotated tag（含 message）**（`git tag -a <name> <sha> -m <message>`；提交右键 “Create Annotated Tag Here…”，提示框输入 `name message`）。**新增 `annotated_tag_args` 单测、`creates_annotated_tag_with_message` 集成测试**
+- 批次 23（A 项）：**工作区与提交对比**——选中 Uncommitted 后 Cmd/Ctrl 点击提交进入该提交↔工作区对比（`git diff <sha>` / `git diff <sha> -- <path>`）；顺带修复 compare 模式下 `detail` 为空导致对比面板不渲染的问题（现在始终加载 detail 并额外填充 compare_files）。**新增 `diffs_working_tree_against_a_commit` 集成测试**
 
 ## 文件结构
 

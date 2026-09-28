@@ -71,6 +71,7 @@ pub struct GraphView {
     stashes: Vec<StashEntry>,
     selected: Option<RowKind>,
     compare: Option<usize>,
+    compare_worktree: bool,
     detail: Option<CommitDetail>,
     detail_sha: Option<String>,
     compare_files: Vec<ChangedFile>,
@@ -509,6 +510,7 @@ impl GraphView {
             stashes: Vec::new(),
             selected: None,
             compare: None,
+            compare_worktree: false,
             detail: None,
             detail_sha: None,
             compare_files: Vec::new(),
@@ -592,6 +594,7 @@ impl GraphView {
         self.detail = None;
         self.detail_sha = None;
         self.compare = None;
+        self.compare_worktree = false;
         self.compare_files.clear();
         self.selected = None;
         self.head_ancestors.clear();
@@ -708,11 +711,14 @@ impl GraphView {
         let sha = commit.sha.clone();
         self.detail_sha = Some(sha.clone());
         if let Some(repo) = self.active_repo().cloned() {
+            self.detail = git::commit_detail(&repo.path, &sha).ok();
             if let Some(compare) = self.compare.and_then(|index| self.commits.get(index)) {
                 let compare_sha = compare.sha.clone();
-                self.compare_files = git::compare_files(&repo.path, &compare_sha, &sha);
-            } else {
-                self.detail = git::commit_detail(&repo.path, &sha).ok();
+                self.compare_files = if self.compare_worktree {
+                    git::working_tree_files(&repo.path, &sha)
+                } else {
+                    git::compare_files(&repo.path, &compare_sha, &sha)
+                };
             }
             self.signature = git::signature_status(&repo.path, &sha);
             self.signature_details = git::signature_details(&repo.path, &sha);
@@ -730,6 +736,8 @@ impl GraphView {
             }
             RowKind::Uncommitted => {
                 self.selected = Some(row);
+                self.compare = None;
+                self.compare_worktree = false;
                 self.detail = None;
                 let files: Vec<ChangedFile> = self
                     .status
@@ -775,6 +783,11 @@ impl GraphView {
     fn toggle_compare(&mut self, commit_index: usize, cx: &mut Context<Self>) {
         if self.compare.is_some() {
             self.compare = None;
+            self.compare_worktree = false;
+        } else if matches!(self.selected, Some(RowKind::Uncommitted)) {
+            // Comparing the working tree against the clicked commit.
+            self.compare = Some(commit_index);
+            self.compare_worktree = true;
         } else {
             self.compare = self.selected_commit_index().or(Some(commit_index));
         }
@@ -3198,6 +3211,10 @@ impl GraphView {
             .map(|commit| commit.sha.clone());
         if let Some(repo) = self.active_repo() {
             let (text, title) = match compare_sha {
+                Some(_) if self.compare_worktree => (
+                    git::working_tree_file_diff(&repo.path, &sha, path),
+                    format!("Working tree vs {} — {}", &sha[..sha.len().min(8)], path),
+                ),
                 Some(from) => (
                     git::compare_file_diff(&repo.path, &from, &sha, path),
                     format!(

@@ -528,6 +528,21 @@ pub fn compare_file_diff(repo: &Path, from: &str, to: &str, path: &str) -> Strin
 
 pub fn compare_files(repo: &Path, from: &str, to: &str) -> Vec<ChangedFile> {
     let output = run(repo, &["diff", "--numstat", from, to]).unwrap_or_default();
+    parse_numstat(&output)
+}
+
+/// Files that differ between the working tree and `sha`.
+pub fn working_tree_files(repo: &Path, sha: &str) -> Vec<ChangedFile> {
+    let output = run(repo, &["diff", "--numstat", sha]).unwrap_or_default();
+    parse_numstat(&output)
+}
+
+/// Unified diff of a single file between the working tree and `sha`.
+pub fn working_tree_file_diff(repo: &Path, sha: &str, path: &str) -> String {
+    run(repo, &["diff", "--no-color", sha, "--", path]).unwrap_or_default()
+}
+
+fn parse_numstat(output: &str) -> Vec<ChangedFile> {
     output
         .lines()
         .filter_map(|line| {
