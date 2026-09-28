@@ -20,3 +20,13 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "a8535d86
 ] }
 anyhow = "1"
 md5 = "0.7"
+
+# gpui plus its dependency tree is large; dropping debug info and incremental
+# compilation keeps `target/` (and CI caches) much smaller. Debug builds still
+# work, they just are not debuggable with line-level source info.
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.dev.package."*"]
+debug = false
