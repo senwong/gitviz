@@ -2445,6 +2445,8 @@ impl GraphView {
         let review_active = !comparing && self.review.has_commit(&sha);
         // The uncommitted-changes view is the only one with no commit or stash.
         let can_discard = self.detail_sha.is_none() && self.detail_stash.is_none();
+        let (subject, body) = split_subject_body(&detail.message);
+        let short_sha: String = sha.chars().take(8).collect();
 
         let files: Vec<AnyElement> = if comparing {
             self.compare_files
@@ -2507,18 +2509,24 @@ impl GraphView {
             .border_color(theme.border)
             .overflow_hidden()
             .child(
-                div()
+                v_flex()
                     .w_full()
                     .px_3()
                     .py_2()
-                    .text_color(theme.text)
+                    .gap_0p5()
                     .border_b_1()
                     .border_color(theme.border)
-                    .child(if comparing {
-                        format!("Comparing with {}", &sha[..sha.len().min(8)])
-                    } else {
-                        sha.chars().take(8).collect::<String>()
-                    }),
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.text_muted)
+                            .child(if comparing {
+                                format!("Comparing with {short_sha}")
+                            } else {
+                                short_sha.clone()
+                            }),
+                    )
+                    .child(div().text_color(theme.text).child(subject.clone())),
             )
             .child(
                 h_flex()
@@ -2577,16 +2585,19 @@ impl GraphView {
                     )
                 },
             )
-            .child(self.render_message(&detail.message))
+            .when(!body.is_empty(), |this| this.child(self.render_message(&body)))
             .child(self.render_tags(&sha, weak.clone()))
             .child(self.render_detail_actions(&sha, weak))
             .child(
                 div()
                     .w_full()
                     .px_3()
-                    .py_1()
+                    .pt_2()
+                    .pb_1()
                     .text_sm()
                     .text_color(theme.text_muted)
+                    .border_t_1()
+                    .border_color(theme.border)
                     .child(format!("{} files changed", files.len())),
             )
             .child(
@@ -2938,11 +2949,17 @@ impl GraphView {
                 ResizeColumn::Author => "resize-author",
                 ResizeColumn::Commit => "resize-commit",
             };
+            let hover = theme.hover;
+            let border = theme.border;
             div()
                 .id(id)
                 .w(px(6.))
                 .h_full()
+                .flex()
+                .justify_center()
                 .cursor_pointer()
+                .hover(move |this| this.bg(hover))
+                .child(div().w(px(1.)).h_full().bg(border))
                 .on_mouse_down(
                     MouseButton::Left,
                     move |event: &MouseDownEvent, _window, cx| {
@@ -4819,6 +4836,15 @@ fn status_entry_letter(entry: &StatusEntry) -> char {
     }
 }
 
+/// Splits a commit message into `(subject, body)`, trimming blank lines around
+/// the body.
+fn split_subject_body(message: &str) -> (String, String) {
+    let mut lines = message.lines();
+    let subject = lines.next().unwrap_or("").trim().to_string();
+    let body = lines.collect::<Vec<_>>().join("\n");
+    (subject, body.trim().to_string())
+}
+
 /// Renders a git `--date=iso` string for the Date column: the short form keeps
 /// only the date, the full form drops seconds and the timezone offset.
 fn format_date(iso: &str, short: bool) -> String {
@@ -5537,6 +5563,23 @@ mod tests {
             vec!["HEAD".to_string(), "main".to_string()]
         );
         assert_eq!(split_ref_entry("origin/main"), vec!["origin/main".to_string()]);
+    }
+
+    #[test]
+    fn splits_subject_and_body() {
+        assert_eq!(
+            split_subject_body("subject\n\nbody one\nbody two"),
+            ("subject".to_string(), "body one\nbody two".to_string())
+        );
+        assert_eq!(
+            split_subject_body("subject"),
+            ("subject".to_string(), String::new())
+        );
+        assert_eq!(
+            split_subject_body("subject\n\n"),
+            ("subject".to_string(), String::new())
+        );
+        assert_eq!(split_subject_body(""), (String::new(), String::new()));
     }
 
     fn changed(path: &str) -> ChangedFile {
