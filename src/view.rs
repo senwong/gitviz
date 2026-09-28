@@ -9,9 +9,9 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use gpui::{
-    AnyElement, App, Bounds, ClickEvent, Context, FocusHandle, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, Pixels, Render, UniformListScrollHandle, Window, div, h_flex,
-    point, prelude::*, px, uniform_list, v_flex,
+    AnyElement, App, Bounds, ClickEvent, Context, Div, FocusHandle, IntoElement, KeyDownEvent,
+    MouseButton, MouseDownEvent, Pixels, Render, UniformListScrollHandle, Window, div,
+    point, prelude::*, px, uniform_list,
 };
 
 use crate::config::RepoConfig;
@@ -2028,7 +2028,13 @@ impl GraphView {
                     .text_color(theme.text_muted)
                     .child(format!("{} files changed", files.len())),
             )
-            .child(v_flex().w_full().overflow_y_scroll().children(files))
+            .child(
+                v_flex()
+                    .id("detail-file-list")
+                    .w_full()
+                    .overflow_y_scroll()
+                    .children(files),
+            )
             .into_any_element()
     }
 
@@ -2297,7 +2303,12 @@ impl GraphView {
                 .border_color(theme.border)
                 .child(query_line)
                 .into_any_element(),
-            v_flex().w_full().overflow_y_scroll().children(items).into_any_element(),
+            v_flex()
+                .id("command-list")
+                .w_full()
+                .overflow_y_scroll()
+                .children(items)
+                .into_any_element(),
         ])
     }
 
@@ -2447,7 +2458,12 @@ impl GraphView {
                 .border_color(theme.border)
                 .child(query_line)
                 .into_any_element(),
-            v_flex().w_full().overflow_y_scroll().children(items).into_any_element(),
+            v_flex()
+                .id("repo-list")
+                .w_full()
+                .overflow_y_scroll()
+                .children(items)
+                .into_any_element(),
         ])
     }
 
@@ -2661,7 +2677,12 @@ impl GraphView {
                 .child("Filter branches (click to toggle, or act on one)")
                 .into_any_element(),
             show_all,
-            v_flex().w_full().overflow_y_scroll().children(items).into_any_element(),
+            v_flex()
+                .id("branch-filter-list")
+                .w_full()
+                .overflow_y_scroll()
+                .children(items)
+                .into_any_element(),
         ])
     }
 
@@ -2909,7 +2930,12 @@ impl GraphView {
                 .border_color(theme.border)
                 .child("Settings")
                 .into_any_element(),
-            v_flex().w_full().overflow_y_scroll().children(items).into_any_element(),
+            v_flex()
+                .id("settings-list")
+                .w_full()
+                .overflow_y_scroll()
+                .children(items)
+                .into_any_element(),
         ])
     }
 
@@ -3010,6 +3036,7 @@ impl GraphView {
                     )
                     .child(
                         v_flex()
+                            .id("diff-lines")
                             .w_full()
                             .overflow_y_scroll()
                             .children(lines),
@@ -3149,6 +3176,16 @@ impl GraphView {
         }
         cx.notify();
     }
+}
+
+/// Horizontally stacks children (standalone replacement for zed's `ui::h_flex`).
+fn h_flex() -> Div {
+    div().flex().flex_row().items_center()
+}
+
+/// Vertically stacks children (standalone replacement for zed's `ui::v_flex`).
+fn v_flex() -> Div {
+    div().flex().flex_col()
 }
 
 fn action_button(

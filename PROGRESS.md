@@ -71,6 +71,7 @@
 - 批次 30（A 项）：**完整 ref 名开关**——`LogFilter::full_refs` + `decorate_args`（`--decorate=full`），设置面板 “Show full ref names”。**新增 `decorate_args` 单测**
 - 批次 31（A 项）：**单文件 Discard**——未提交文件行新增 “Discard” 按钮（`git checkout -- <path>` / 未跟踪用 `git clean -f`）。**新增 `discards_a_single_file` 集成测试**
 - 批次 32（A 项）：**Pull 当前分支入口**——命令面板/设置新增 “Pull current branch”（接线此前未暴露的 `git::pull`）。**已有 `pulls_from_a_remote` 集成测试覆盖**
+- 静态审查修正（对照 pinned gpui rev `a8535d86` 源码）：**`h_flex`/`v_flex` 不在 gpui（在 zed 的 `ui` crate）**，改为在 `view.rs` 内定义本地 `h_flex`/`v_flex`；**`overflow_y_scroll` 只在 `StatefulInteractiveElement`（需要先 `.id(...)`）**，给所有可滚动列表加唯一 `id`。其余 gpui 方法（`when`/`when_some`、`on_hover`/`on_mouse_move`/`on_mouse_up`、`canvas`、`PathBuilder::curve_to(to, ctrl)`、`write_to_clipboard`、`font_weight`、tailwind 风格方法等）已逐一核对存在。
 
 ## 文件结构
 
