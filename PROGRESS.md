@@ -25,14 +25,15 @@
 
 ## 当前状态（务必先看）
 
-- **代码已写约 3200+ 行，但从未编译过。** 第一次 `cargo check` 一定需要修一批错误。
+- **非 UI 逻辑已验证**：把 `config/discovery/emoji/git/layout/markdown/review` 抽到一个临时 crate（不含 gpui）跑测试，**35 个单测 + 20 个集成测试全部通过**（含 `git log` 正文解析、stash 详情、fetch into branch、pull、annotated tag、单文件 discard、工作区对比、stashes_containing、新 `row_segments`、review 等）。UI（`view.rs`/`theme.rs`）仍未编译。
+- **代码约 6000+ 行，UI 部分从未编译过。** 第一次 `cargo check` 仍需修一批错误（已按 pinned gpui rev 做过静态核对，见下）。
 - 最新提交：
   ```
-  1fc6e36 README: tick off completed feature-parity items
-  dec1ade Add emoji/markdown, remotes management, PR/issue links, load more
-  253a0eb Add refs, uncommitted/stash nodes, columns, compare, detail diff and more
-  fc1001e Rename project to gitviz
-  b2cdd44 Initial scaffold: standalone multi-repo git graph viewer on gpui
+  cbb0dfc Add custom issue URL template and use custom providers in detail actions
+  3027beb Fix pull integration test to set up an unborn branch
+  abe2e6d Add tests for URL/issue extraction and ref combining
+  9cf5dbe Fix gpui API usage found by static review against pinned rev
+  52d6196 Expose pull current branch
   ```
 
 ### 已写但未编译的批次
@@ -72,6 +73,8 @@
 - 批次 31（A 项）：**单文件 Discard**——未提交文件行新增 “Discard” 按钮（`git checkout -- <path>` / 未跟踪用 `git clean -f`）。**新增 `discards_a_single_file` 集成测试**
 - 批次 32（A 项）：**Pull 当前分支入口**——命令面板/设置新增 “Pull current branch”（接线此前未暴露的 `git::pull`）。**已有 `pulls_from_a_remote` 集成测试覆盖**
 - 静态审查修正（对照 pinned gpui rev `a8535d86` 源码）：**`h_flex`/`v_flex` 不在 gpui（在 zed 的 `ui` crate）**，改为在 `view.rs` 内定义本地 `h_flex`/`v_flex`；**`overflow_y_scroll` 只在 `StatefulInteractiveElement`（需要先 `.id(...)`）**，给所有可滚动列表加唯一 `id`。其余 gpui 方法（`when`/`when_some`、`on_hover`/`on_mouse_move`/`on_mouse_up`、`canvas`、`PathBuilder::curve_to(to, ctrl)`、`write_to_clipboard`、`font_weight`、tailwind 风格方法等）已逐一核对存在。
+- 批次 33（A 项）：**自定义 Issue URL 模板**——`.gitviz.conf` 的 `issue_provider`（占位符 `{host}/{owner}/{repo}/{issue}`）；详情面板的 “Create PR”/“Open Issue” 也改为优先使用自定义 provider（此前只用了内置）。**新增 `render_issue_template` 单测、config 往返扩展，并补 `find_urls`/`find_issues`/`combine_refs` 单测**
+- 验证：非 UI 逻辑（含上述所有 git 单测/集成测试）已在独立 crate 跑通 **36 单测 + 20 集成**；仅 `view.rs`/`theme.rs` 未编译。
 
 ## 文件结构
 
