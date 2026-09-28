@@ -54,7 +54,7 @@ fn main() {
         let repos = discovery::discover_with_depth(&roots, gitviz::workspace::load_depth());
 
         let bounds = window_bounds(cx);
-        cx.open_window(
+        let window = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 window_min_size: Some(size(px(900.), px(560.))),
@@ -63,8 +63,11 @@ fn main() {
             move |window, cx| {
                 cx.new(|cx| view::GraphView::new(repos, search_roots, select_head, window, cx))
             },
-        )
-        .expect("failed to open window");
+        );
+        if let Err(error) = window {
+            eprintln!("gitviz: failed to open window: {error}");
+            std::process::exit(1);
+        }
 
         cx.set_menus(app_menus());
         cx.activate(true);
