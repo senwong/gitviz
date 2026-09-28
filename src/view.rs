@@ -2300,6 +2300,7 @@ impl Render for GraphView {
             relative_dates: self.relative_dates,
             custom_emoji: Arc::new(self.custom_emoji.clone()),
             graph_style: self.graph_style,
+            containment: Arc::new(self.containment_cache.clone()),
         };
 
         let body: AnyElement = if let Some(error) = &self.error {
@@ -5278,6 +5279,7 @@ struct RowRenderContext {
     relative_dates: bool,
     custom_emoji: Arc<Vec<(String, String)>>,
     graph_style: layout::GraphStyle,
+    containment: Arc<std::collections::HashMap<String, Containment>>,
 }
 
 impl RowRenderContext {
@@ -5460,6 +5462,14 @@ impl RowRenderContext {
         } else {
             "not in HEAD".to_string()
         });
+        if let Some(containment) = self.containment.get(&commit.sha)
+            && !containment.is_empty()
+        {
+            let mut parts = containment.branches.clone();
+            parts.extend(containment.tags.iter().map(|tag| format!("tag:{tag}")));
+            parts.extend(containment.stashes.iter().map(|stash| stash.to_string()));
+            tip_lines.push(format!("contained in: {}", parts.join(", ")));
+        }
         let tip_theme = theme.clone();
 
         div()
