@@ -4240,6 +4240,30 @@ mod tests {
     }
 
     #[test]
+    fn extracts_urls_and_issues_from_messages() {
+        let message = "See (https://example.com/a). Also http://b.test/x, and fixes #123 #45.";
+        let urls = find_urls(message);
+        assert_eq!(
+            urls,
+            vec!["https://example.com/a".to_string(), "http://b.test/x".to_string()]
+        );
+        assert_eq!(find_issues(message), vec!["123".to_string(), "45".to_string()]);
+        assert!(find_urls("no links here").is_empty());
+        assert!(find_issues("no issues").is_empty());
+    }
+
+    #[test]
+    fn combine_refs_prefers_local_over_remote() {
+        let refs = vec![
+            "main".to_string(),
+            "origin/main".to_string(),
+            "origin/feature".to_string(),
+        ];
+        assert_eq!(combine_refs(&refs), vec!["main", "origin/feature"]);
+        assert!(combine_refs(&[]).is_empty());
+    }
+
+    #[test]
     fn find_matches_by_subject_author_and_sha() {
         let mut first = commit("abc123", "Fix SEO", "Sen");
         first.author_date = "2024-05-01 10:00".to_string();
