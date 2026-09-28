@@ -2936,6 +2936,7 @@ impl GraphView {
                 .overflow_y_scroll()
                 .children(items)
                 .into_any_element(),
+            overlay_hint(&theme, "Enter to run · Esc to close"),
         ])
     }
 
@@ -3103,6 +3104,7 @@ impl GraphView {
                 .overflow_y_scroll()
                 .children(items)
                 .into_any_element(),
+            overlay_hint(&theme, "Enter to switch · Esc to close"),
         ])
     }
 
@@ -3290,6 +3292,7 @@ impl GraphView {
                     .children(items)
                     .into_any_element()
             },
+            overlay_hint(&theme, "Enter to open · Esc to close"),
         ])
     }
 
@@ -3355,6 +3358,7 @@ impl GraphView {
                 .overflow_y_scroll()
                 .children(items)
                 .into_any_element(),
+            overlay_hint(&theme, "Enter to apply · Esc to close"),
         ])
     }
 
@@ -3388,6 +3392,7 @@ impl GraphView {
                 })
                 .child(caret(&theme, self.caret_on))
                 .into_any_element(),
+            overlay_hint(&theme, "Enter to confirm · Esc to cancel"),
         ])
     }
 
@@ -4148,6 +4153,20 @@ fn action_button(
         .hover(move |this| this.bg(hover_color))
         .on_click(move |_: &ClickEvent, _window, cx| handler(cx))
         .child(label)
+}
+
+/// A one-line hint shown at the bottom of an overlay, e.g. key hints.
+fn overlay_hint(theme: &Theme, text: &str) -> AnyElement {
+    div()
+        .w_full()
+        .px_3()
+        .py_1()
+        .text_sm()
+        .text_color(theme.text_muted)
+        .border_t_1()
+        .border_color(theme.border)
+        .child(text.to_string())
+        .into_any_element()
 }
 
 fn overlay(theme: Theme, top: f32, width: f32, children: Vec<AnyElement>) -> AnyElement {
