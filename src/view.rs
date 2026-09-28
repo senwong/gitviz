@@ -1594,6 +1594,10 @@ impl GraphView {
         self.relative_dates = config.relative_dates;
         self.use_full_refs = config.full_refs;
         self.scroll_to_head_on_load = config.scroll_to_head;
+        self.date_width = config.date_width;
+        self.author_width = config.author_width;
+        self.commit_width = config.commit_width;
+        self.color_preset = config.color_preset as usize;
         self.repo_order = RepoOrder::from_str(&config.repo_order);
         self.branch_globs = config.branch_globs;
         self.custom_lane_colors = config.lane_colors;
@@ -1782,6 +1786,10 @@ impl GraphView {
             relative_dates: self.relative_dates,
             full_refs: self.use_full_refs,
             scroll_to_head: self.scroll_to_head_on_load,
+            date_width: self.date_width,
+            author_width: self.author_width,
+            commit_width: self.commit_width,
+            color_preset: self.color_preset as u32,
             repo_order: self.repo_order.as_str().to_string(),
             branch_globs: self.branch_globs.clone(),
             lane_colors: self.custom_lane_colors.clone(),

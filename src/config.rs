@@ -28,6 +28,10 @@ pub struct RepoConfig {
     pub relative_dates: bool,
     pub full_refs: bool,
     pub scroll_to_head: bool,
+    pub date_width: f32,
+    pub author_width: f32,
+    pub commit_width: f32,
+    pub color_preset: u32,
     pub repo_order: String,
     /// Branch glob patterns (e.g. `heads/feature/*`); empty means show all.
     pub branch_globs: Vec<String>,
@@ -68,6 +72,10 @@ impl Default for RepoConfig {
             relative_dates: false,
             full_refs: false,
             scroll_to_head: false,
+            date_width: 150.,
+            author_width: 130.,
+            commit_width: 80.,
+            color_preset: 0,
             repo_order: "name".to_string(),
             branch_globs: Vec::new(),
             lane_colors: Vec::new(),
@@ -120,6 +128,10 @@ impl RepoConfig {
                 "relative_dates" => config.relative_dates = flag,
                 "full_refs" => config.full_refs = flag,
                 "scroll_to_head" => config.scroll_to_head = flag,
+                "date_width" => config.date_width = value.parse().unwrap_or(150.),
+                "author_width" => config.author_width = value.parse().unwrap_or(130.),
+                "commit_width" => config.commit_width = value.parse().unwrap_or(80.),
+                "color_preset" => config.color_preset = value.parse().unwrap_or(0),
                 "repo_order" => config.repo_order = value.to_string(),
                 "branch_globs" => {
                     config.branch_globs = split_list(value);
@@ -169,6 +181,10 @@ impl RepoConfig {
             output.push_str(&format!("{key}={value}\n"));
         }
         output.push_str(&format!("repo_order={}\n", self.repo_order));
+        output.push_str(&format!("date_width={}\n", self.date_width));
+        output.push_str(&format!("author_width={}\n", self.author_width));
+        output.push_str(&format!("commit_width={}\n", self.commit_width));
+        output.push_str(&format!("color_preset={}\n", self.color_preset));
         output.push_str(&format!("branch_globs={}\n", self.branch_globs.join(";")));
         output.push_str(&format!("lane_colors={}\n", self.lane_colors.join(";")));
         output.push_str(&format!(
@@ -224,6 +240,10 @@ mod tests {
         config.relative_dates = true;
         config.full_refs = true;
         config.scroll_to_head = true;
+        config.date_width = 180.;
+        config.author_width = 140.;
+        config.commit_width = 96.;
+        config.color_preset = 2;
         config.pr_provider = "https://git.example.com/{owner}/{repo}/compare/{base}...{head}".to_string();
         config.issue_provider = "https://bugs.example.com/{issue}".to_string();
         config.save(&dir).unwrap();
@@ -242,6 +262,10 @@ mod tests {
         assert!(loaded.relative_dates);
         assert!(loaded.full_refs);
         assert!(loaded.scroll_to_head);
+        assert_eq!(loaded.date_width, 180.);
+        assert_eq!(loaded.author_width, 140.);
+        assert_eq!(loaded.commit_width, 96.);
+        assert_eq!(loaded.color_preset, 2);
         assert_eq!(loaded.graph_style, "angular");
         assert_eq!(
             loaded.pr_provider,
