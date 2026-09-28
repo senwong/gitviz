@@ -3971,15 +3971,19 @@ impl GraphView {
             .text
             .lines()
             .map(|line| {
-                let color = if line.starts_with('+') && !line.starts_with("+++") {
-                    theme.accent
-                } else if line.starts_with('-') && !line.starts_with("---") {
+                let color = if line.starts_with("+++") || line.starts_with("---") {
+                    theme.text_muted
+                } else if line.starts_with('+') {
+                    theme.tag
+                } else if line.starts_with('-') {
                     theme.error
+                } else if line.starts_with("@@") {
+                    theme.accent
                 } else {
                     theme.text_muted
                 };
                 div()
-                    .w_full()
+                    .whitespace_nowrap()
                     .text_sm()
                     .text_color(color)
                     .child(line.to_string())
@@ -4001,7 +4005,7 @@ impl GraphView {
                     .w(px(900.))
                     .max_h(px(640.))
                     .bg(theme.panel)
-                    .rounded_md()
+                    .rounded_lg()
                     .shadow_lg()
                     .border_1()
                     .border_color(theme.border)
@@ -4021,8 +4025,10 @@ impl GraphView {
                             .id("diff-lines")
                             .w_full()
                             .overflow_y_scroll()
+                            .overflow_x_scroll()
                             .children(lines),
-                    ),
+                    )
+                    .child(overlay_hint(&theme, "Esc to close")),
             )
             .into_any_element()
     }
@@ -5154,7 +5160,7 @@ fn avatar_circle(
 
 fn status_letter(status: char, theme: &Theme) -> AnyElement {
     let color = match status {
-        'A' => theme.accent,
+        'A' => theme.tag,
         'D' => theme.error,
         'R' => theme.accent,
         'U' => theme.error,
