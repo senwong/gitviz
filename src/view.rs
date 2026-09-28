@@ -4523,4 +4523,53 @@ mod tests {
         };
         assert_eq!(status_entry_letter(&staged), 'D');
     }
+
+    #[test]
+    fn file_tree_groups_and_optionally_compacts_folders() {
+        let files = vec![
+            changed("a/b/c.txt"),
+            changed("a/b/d.txt"),
+            changed("e.txt"),
+        ];
+
+        let rows = build_tree_rows(&files, false);
+        let names: Vec<(usize, bool, &str)> = rows
+            .iter()
+            .map(|row| (row.depth, row.is_dir, row.name.as_str()))
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                (0, true, "a"),
+                (1, true, "b"),
+                (2, false, "c.txt"),
+                (2, false, "d.txt"),
+                (0, false, "e.txt"),
+            ]
+        );
+
+        let compact = build_tree_rows(&files, true);
+        let compact_names: Vec<(usize, bool, &str)> = compact
+            .iter()
+            .map(|row| (row.depth, row.is_dir, row.name.as_str()))
+            .collect();
+        assert_eq!(
+            compact_names,
+            vec![
+                (0, true, "a/b"),
+                (1, false, "c.txt"),
+                (1, false, "d.txt"),
+                (0, false, "e.txt"),
+            ]
+        );
+    }
+
+    fn changed(path: &str) -> ChangedFile {
+        ChangedFile {
+            status: 'M',
+            added: 1,
+            removed: 0,
+            path: path.to_string(),
+        }
+    }
 }
