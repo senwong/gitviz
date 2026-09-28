@@ -65,8 +65,8 @@ cd ~/projects/gitviz
 
 | 快捷键 | 作用 |
 | --- | --- |
-| `⌘P` | 打开/关闭仓库面板 |
-| `⇧⌘P` | 打开/关闭命令面板 |
+| `⌘P` | 打开/关闭命令面板 |
+| `⇧⌘P` | 打开/关闭仓库切换面板 |
 | `⌘F` | 打开/关闭查找 |
 | `⌘G` / `⇧⌘G` | 跳到下一个 / 上一个匹配 |
 | `⌘R` | 重新加载当前仓库（`git log`） |
@@ -77,6 +77,8 @@ cd ~/projects/gitviz
 | `↑` / `↓` | 上下选择提交 |
 | `⌘`/`Ctrl` + 点击 | 进入提交对比（选中 Uncommitted 时为工作区↔提交对比） |
 | `Enter` / `Esc` | 提交对话框 / 关闭面板、菜单、diff |
+
+原生菜单栏还提供 **File / View / Window / Help**：File → Open Repository…、Open Workspace…、Save Workspace…、Open Recent…、Switch Repository…。
 
 ## 目录结构
 
@@ -161,7 +163,10 @@ script/build       cargo 包装脚本
   - [x] Markdown 子集（粗体/斜体/行内代码）
 - 其他
   - [x] 多仓库（Cmd+P 搜索切换 + 仓库排序 + 发现深度 + 动态 Add/Remove repository）
+  - [x] 未打开仓库时显示欢迎页（Open Repository / Open Workspace 按钮 + Open Recent 列表）
   - [x] 打开仓库：原生目录选择器 “Open repository…” / 把文件夹或仓库拖拽到窗口
+  - [x] Open Recent：记住最近打开的仓库/工作区（`~/.config/gitviz/recent`）
+  - [x] 原生菜单栏 File / View / Window / Help（Open Repository/Workspace、Save Workspace、Open Recent、Switch Repository、Minimize/Zoom、Quit）
   - [x] Workspace 文件（`.gitviz-workspace`）：一行一个仓库/目录，支持 `#` 注释与 `~`；命令面板 “Open workspace…” / “Save workspace…”，也可作为命令行参数传入
   - [~] 首字母头像（网络头像省略）；命令面板（⇧⌘P）已做；状态栏入口 N/A
   - [x] 仓库最大发现深度可配置

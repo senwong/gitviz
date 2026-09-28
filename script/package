@@ -131,9 +131,16 @@ codesign --verify --deep --strict "$app_path"
 
 echo "==> Creating DMG"
 rm -f "$dmg_path"
-# Create directly from the .app; a /var/folders staging dir can trip
-# "hdiutil: create failed - Resource busy" on some systems.
-hdiutil create -volname "$name" -srcfolder "$app_path" -ov -format UDZO "$dmg_path" >/dev/null
+# Stage the .app plus an /Applications symlink so the DMG can be drag-installed.
+# The staging directory is kept on the same volume as the output to avoid
+# "hdiutil: create failed - Resource busy" from cross-volume temp dirs.
+staging="$out_dir/.dmg-staging"
+rm -rf "$staging"
+mkdir -p "$staging"
+cp -R "$app_path" "$staging/"
+ln -s /Applications "$staging/Applications"
+hdiutil create -volname "$name" -srcfolder "$staging" -ov -format UDZO "$dmg_path" >/dev/null
+rm -rf "$staging"
 
 echo
 echo "Done:"

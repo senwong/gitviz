@@ -61,9 +61,42 @@ fn candidates(root: &Path, max_depth: usize) -> Vec<PathBuf> {
         if !path.is_dir() {
             continue;
         }
+        if should_skip(&entry.file_name().to_string_lossy()) {
+            continue;
+        }
         paths.extend(candidates(&path, max_depth - 1));
     }
     paths
+}
+
+/// Hidden directories and common build/dependency directories are not worth
+/// descending into when looking for repositories (and skipping them keeps a
+/// scan of a large home directory fast).
+///
+/// The macOS home folders listed here are also skipped because reading them
+/// triggers system privacy prompts (and `Library/CloudStorage` holds network
+/// volumes that prompt for network access).
+fn should_skip(name: &str) -> bool {
+    name.starts_with('.')
+        || matches!(
+            name,
+            "node_modules"
+                | "target"
+                | "__pycache__"
+                | "venv"
+                | "Pods"
+                | "Library"
+                | "Applications"
+                | "Desktop"
+                | "Documents"
+                | "Downloads"
+                | "Movies"
+                | "Music"
+                | "Pictures"
+                | "Public"
+                | "CloudStorage"
+                | "Volumes"
+        )
 }
 
 #[cfg(test)]
@@ -100,6 +133,36 @@ mod tests {
 
         let depth_three = discover_with_depth(std::slice::from_ref(&root), 3);
         assert_eq!(depth_three.len(), 4);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn skips_hidden_and_build_directories() {
+        assert!(should_skip(".git"));
+        assert!(should_skip(".cache"));
+        assert!(should_skip("node_modules"));
+        assert!(should_skip("target"));
+        // macOS-protected / network-backed folders must not be walked.
+        assert!(should_skip("Library"));
+        assert!(should_skip("Documents"));
+        assert!(should_skip("Desktop"));
+        assert!(should_skip("Downloads"));
+        assert!(should_skip("CloudStorage"));
+        assert!(!should_skip("src"));
+        assert!(!should_skip("my-repo"));
+    }
+
+    #[test]
+    fn does_not_descend_into_skipped_directories() {
+        let root = temp_root("skip");
+        touch_git(&root.join("node_modules/inner"));
+        touch_git(&root.join(".hidden/inner"));
+        touch_git(&root.join("src/inner"));
+
+        let found = discover_with_depth(std::slice::from_ref(&root), 2);
+        assert_eq!(found.len(), 1);
+        assert!(found[0].path.ends_with("src/inner"));
 
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -5,7 +5,7 @@
 //! ignored. This is intentionally dependency-free and easy to commit next to a
 //! set of related repositories.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub const FILE_SUFFIX: &str = ".gitviz-workspace";
 
@@ -52,6 +52,74 @@ pub fn expand_roots(args: &[PathBuf]) -> Vec<PathBuf> {
         }
     }
     roots
+}
+
+/// Where the last-used roots are remembered, so the app can reopen the same
+/// repositories without re-scanning (possibly privacy-protected) directories.
+fn state_path() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(PathBuf::from(home).join(".config/gitviz/roots"))
+}
+
+/// Loads the roots remembered from the previous session.
+pub fn load_default_roots() -> Vec<PathBuf> {
+    let Some(path) = state_path() else {
+        return Vec::new();
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    parse(&text)
+        .into_iter()
+        .map(|line| expand_tilde(&line))
+        .filter(|path| path.exists())
+        .collect()
+}
+
+/// Remembers the given roots for the next session.
+pub fn save_default_roots(roots: &[PathBuf]) {
+    let Some(path) = state_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, serialize(roots));
+}
+
+fn recent_path() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(PathBuf::from(home).join(".config/gitviz/recent"))
+}
+
+/// The most recently opened repositories / workspace files (newest first).
+pub fn load_recent() -> Vec<PathBuf> {
+    let Some(path) = recent_path() else {
+        return Vec::new();
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return Vec::new();
+    };
+    parse(&text)
+        .into_iter()
+        .map(|line| expand_tilde(&line))
+        .filter(|path| path.exists())
+        .collect()
+}
+
+/// Records `opened` as the most recent entry (deduplicated, capped at 10).
+pub fn remember_recent(opened: &Path) {
+    let mut entries = load_recent();
+    entries.retain(|path| path != opened);
+    entries.insert(0, opened.to_path_buf());
+    entries.truncate(10);
+    let Some(path) = recent_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, serialize(&entries));
 }
 
 #[cfg(test)]

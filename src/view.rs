@@ -14,6 +14,7 @@ use gpui::{
     UniformListScrollHandle, Window, div, point, prelude::*, px, uniform_list,
 };
 
+use crate::actions::*;
 use crate::config::RepoConfig;
 use crate::discovery::Repo;
 use crate::emoji;
@@ -60,6 +61,8 @@ pub struct GraphView {
     repos: Vec<Repo>,
     roots: Vec<std::path::PathBuf>,
     workspace_path: Option<std::path::PathBuf>,
+    recent: Vec<std::path::PathBuf>,
+    recent_menu: RecentMenu,
     repo_depth: usize,
     active: usize,
     branch: Option<String>,
@@ -202,6 +205,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Open repository…", "open-repo"),
     ("Open workspace…", "open-workspace"),
     ("Save workspace…", "save-workspace"),
+    ("Open recent…", "open-recent"),
 ];
 
 fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
@@ -336,6 +340,12 @@ impl RepoOrder {
 struct Palette {
     open: bool,
     query: String,
+    selected: usize,
+}
+
+#[derive(Default)]
+struct RecentMenu {
+    open: bool,
     selected: usize,
 }
 
@@ -516,6 +526,8 @@ impl GraphView {
             repos,
             roots,
             workspace_path: None,
+            recent: crate::workspace::load_recent(),
+            recent_menu: RecentMenu::default(),
             repo_depth: crate::discovery::DEFAULT_DEPTH,
             active: 0,
             branch: None,
@@ -880,13 +892,15 @@ impl GraphView {
             match keystroke.key.as_str() {
                 "p" => {
                     if keystroke.modifiers.shift {
-                        self.commands.open = !self.commands.open;
-                        self.commands.query.clear();
-                        self.commands.selected = 0;
-                    } else {
+                        // ⇧⌘P: switch repository.
                         self.palette.open = !self.palette.open;
                         self.palette.query.clear();
                         self.palette.selected = 0;
+                    } else {
+                        // ⌘P: command palette (like most editors).
+                        self.commands.open = !self.commands.open;
+                        self.commands.query.clear();
+                        self.commands.selected = 0;
                     }
                 }
                 "g" => {
@@ -949,6 +963,29 @@ impl GraphView {
                         prompt.input.push_str(character);
                     }
                 }
+            }
+            cx.notify();
+            return;
+        }
+
+        if self.recent_menu.open {
+            let count = self.recent.len();
+            match keystroke.key.as_str() {
+                "escape" => self.recent_menu.open = false,
+                "enter" => {
+                    if let Some(path) = self.recent.get(self.recent_menu.selected).cloned() {
+                        self.open_recent(path, cx);
+                    }
+                }
+                "up" => {
+                    self.recent_menu.selected = self.recent_menu.selected.saturating_sub(1)
+                }
+                "down" => {
+                    if count > 0 && self.recent_menu.selected + 1 < count {
+                        self.recent_menu.selected += 1;
+                    }
+                }
+                _ => {}
             }
             cx.notify();
             return;
@@ -1238,6 +1275,7 @@ impl GraphView {
             .and_then(|path| self.repos.iter().position(|repo| repo.path == path))
             .unwrap_or(0);
         self.sort_repos();
+        crate::workspace::save_default_roots(&self.roots);
         self.load(cx);
     }
 
@@ -1253,12 +1291,15 @@ impl GraphView {
             self.active = self.repos.len().saturating_sub(1);
         }
         self.sort_repos();
+        crate::workspace::save_default_roots(&self.roots);
         self.load(cx);
     }
 
     /// Adds a repository root (idempotently). Returns whether the roots changed.
     fn add_root(&mut self, path: std::path::PathBuf) -> bool {
         if path.exists() && !self.roots.contains(&path) {
+            crate::workspace::remember_recent(&path);
+            self.recent = crate::workspace::load_recent();
             self.roots.push(path);
             true
         } else {
@@ -1277,6 +1318,8 @@ impl GraphView {
             self.add_root(crate::workspace::expand_tilde(&line));
         }
         self.workspace_path = Some(path.to_path_buf());
+        crate::workspace::remember_recent(path);
+        self.recent = crate::workspace::load_recent();
         self.rediscover(cx);
     }
 
@@ -1291,6 +1334,17 @@ impl GraphView {
             Err(error) => self.error = Some(error.to_string()),
         }
         cx.notify();
+    }
+
+    /// Opens a path from the "Open Recent" list: a workspace file is loaded,
+    /// anything else is added as a repository root.
+    fn open_recent(&mut self, path: std::path::PathBuf, cx: &mut Context<Self>) {
+        self.recent_menu.open = false;
+        if path.to_string_lossy().ends_with(crate::workspace::FILE_SUFFIX) {
+            self.open_workspace(&path, cx);
+        } else if self.add_root(path) {
+            self.rediscover(cx);
+        }
     }
 
     /// Handles paths dragged onto the window: repository folders are added as
@@ -1727,6 +1781,7 @@ impl Render for GraphView {
             .child(chip("Branches", self.branch_filter.open, "branch-filter", weak.clone(), theme.clone()))
             .child(chip("Settings", self.settings_open, "settings", weak.clone(), theme.clone()))
             .child(chip("Find", self.search_active, "find", weak.clone(), theme.clone()))
+            .child(chip("Open", false, "open-repo", weak.clone(), theme.clone()))
             .child(chip("Refresh", false, "refresh", weak.clone(), theme.clone()))
             .child(chip("Push", false, "push", weak.clone(), theme.clone()))
             .child(chip("PR", false, "pr", weak.clone(), theme.clone()))
@@ -1801,6 +1856,29 @@ impl Render for GraphView {
         let branch_filter = self.branch_filter.open.then(|| self.render_branch_filter(weak.clone()));
         let settings = self.settings_open.then(|| self.render_settings(weak.clone()));
         let diff = self.diff.as_ref().map(|view| self.render_diff(view));
+        let recent = self.recent_menu.open.then(|| self.render_recent(weak.clone()));
+
+        let content: AnyElement = if self.repos.is_empty() {
+            self.render_welcome(weak.clone())
+        } else {
+            v_flex()
+                .size_full()
+                .child(header)
+                .children(search_bar)
+                .child(self.render_column_header(weak.clone()))
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .flex_1()
+                        .min_h_0()
+                        .w_full()
+                        .child(body)
+                        .when_some(detail, |this, detail| this.child(detail)),
+                )
+                .child(self.render_footer())
+                .into_any_element()
+        };
 
         let _ = window;
 
@@ -1812,18 +1890,48 @@ impl Render for GraphView {
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_drop::<ExternalPaths>(cx.listener(Self::on_drop_paths))
-            .child(header)
-            .children(search_bar)
-            .child(self.render_column_header(weak.clone()))
-            .child(
-                h_flex()
-                    .flex_1()
-                    .min_h_0()
-                    .w_full()
-                    .child(body)
-                    .when_some(detail, |this, detail| this.child(detail)),
+            .on_action(cx.listener(|this, _: &OpenRepository, _window, cx| {
+                this.on_chip("open-repo", cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenWorkspace, _window, cx| {
+                this.on_chip("open-workspace", cx)
+            }))
+            .on_action(cx.listener(|this, _: &SaveWorkspace, _window, cx| {
+                this.on_chip("save-workspace", cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenRecent, _window, cx| {
+                this.recent = crate::workspace::load_recent();
+                this.recent_menu = RecentMenu {
+                    open: true,
+                    selected: 0,
+                };
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &SwitchRepository, _window, cx| {
+                this.palette.open = true;
+                this.palette.query.clear();
+                this.palette.selected = 0;
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &ToggleTheme, _window, cx| {
+                this.theme = this.theme.toggled();
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &RefreshGraph, _window, cx| this.load(cx)))
+            .on_action(cx.listener(|this, _: &FindCommit, _window, cx| {
+                this.search_active = true;
+                cx.notify();
+            }))
+            .on_action(
+                cx.listener(|_this, _: &Minimize, window, _cx| window.minimize_window()),
             )
-            .child(self.render_footer())
+            .on_action(cx.listener(|_this, _: &Zoom, window, _cx| window.zoom_window()))
+            .on_action(cx.listener(|_this, _: &OpenHomepage, _window, _cx| {
+                let _ = git::open_url("https://github.com/senwong/gitviz");
+            }))
+            .on_action(cx.listener(|_this, _: &Quit, _window, cx| cx.quit()))
+            .child(content)
+            .when_some(recent, |this, recent| this.child(recent))
             .when_some(diff, |this, diff| this.child(diff))
             .when_some(palette, |this, palette| this.child(palette))
             .when_some(commands, |this, commands| this.child(commands))
@@ -1980,6 +2088,14 @@ impl GraphView {
                     }
                 })
                 .detach();
+            }
+            "open-recent" => {
+                self.recent = crate::workspace::load_recent();
+                self.recent_menu = RecentMenu {
+                    open: true,
+                    selected: 0,
+                };
+                cx.notify();
             }
             "pr" => {
                 let branch = self.branch.clone().unwrap_or_default();
@@ -2641,6 +2757,187 @@ impl GraphView {
         ])
     }
 
+    fn render_welcome(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
+        let theme = self.theme.clone();
+
+        let button = |id: &'static str,
+                      label: &'static str,
+                      theme: &Theme,
+                      weak: gpui::WeakEntity<Self>| {
+            let bg = theme.accent;
+            let fg = theme.bg;
+            div()
+                .id(id)
+                .px_4()
+                .py_2()
+                .rounded_md()
+                .bg(bg)
+                .text_color(fg)
+                .cursor_pointer()
+                .on_click(move |_: &ClickEvent, _window, cx| {
+                    weak.update(cx, |this, cx| this.on_chip(id, cx)).ok();
+                })
+                .child(label)
+        };
+
+        let recents: Vec<AnyElement> = self
+            .recent
+            .iter()
+            .map(|path| {
+                let label = path.display().to_string();
+                let target = path.clone();
+                let weak = weak.clone();
+                let text = theme.text;
+                let hover = theme.hover;
+                h_flex()
+                    .id(format!("welcome-recent-{label}"))
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .gap_2()
+                    .cursor_pointer()
+                    .hover(move |this| this.bg(hover))
+                    .on_click(move |_: &ClickEvent, _window, cx| {
+                        let target = target.clone();
+                        weak.update(cx, |this, cx| this.open_recent(target, cx)).ok();
+                    })
+                    .child(div().text_sm().text_color(text).child(label))
+                    .into_any_element()
+            })
+            .collect();
+
+        v_flex()
+            .size_full()
+            .items_center()
+            .justify_center()
+            .gap_4()
+            .bg(theme.bg)
+            .child(div().text_lg().text_color(theme.text).child("gitviz"))
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(theme.text_muted)
+                    .child("Open a repository or workspace to see its graph"),
+            )
+            .child(
+                h_flex()
+                    .gap_3()
+                    .child(button("open-repo", "Open Repository…", &theme, weak.clone()))
+                    .child(button("open-workspace", "Open Workspace…", &theme, weak.clone()))
+                    .when(!self.roots.is_empty(), |this| {
+                        this.child(button(
+                            "save-workspace",
+                            "Save Workspace…",
+                            &theme,
+                            weak.clone(),
+                        ))
+                    }),
+            )
+            .child(
+                v_flex()
+                    .w(px(560.))
+                    .max_h(px(360.))
+                    .bg(theme.panel)
+                    .rounded_md()
+                    .border_1()
+                    .border_color(theme.border)
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .w_full()
+                            .px_3()
+                            .py_1()
+                            .text_sm()
+                            .text_color(theme.text_muted)
+                            .border_b_1()
+                            .border_color(theme.border)
+                            .child("Recent"),
+                    )
+                    .child(if recents.is_empty() {
+                        div()
+                            .px_3()
+                            .py_2()
+                            .text_sm()
+                            .text_color(theme.text_muted)
+                            .child("No recent repositories")
+                            .into_any_element()
+                    } else {
+                        v_flex()
+                            .id("welcome-recent-list")
+                            .w_full()
+                            .overflow_y_scroll()
+                            .children(recents)
+                            .into_any_element()
+                    }),
+            )
+            .into_any_element()
+    }
+
+    fn render_recent(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
+        let theme = self.theme.clone();
+        let selected = self
+            .recent_menu
+            .selected
+            .min(self.recent.len().saturating_sub(1));
+
+        let items: Vec<AnyElement> = self
+            .recent
+            .iter()
+            .enumerate()
+            .map(|(index, path)| {
+                let is_selected = index == selected;
+                let label = path.display().to_string();
+                let target = path.clone();
+                let weak = weak.clone();
+                let text = theme.text;
+                let hover = theme.hover;
+                let selected_bg = theme.selected;
+                h_flex()
+                    .id(format!("recent-item-{index}"))
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .when(is_selected, |this| this.bg(selected_bg))
+                    .cursor_pointer()
+                    .hover(move |this| this.bg(hover))
+                    .on_click(move |_: &ClickEvent, _window, cx| {
+                        let target = target.clone();
+                        weak.update(cx, |this, cx| this.open_recent(target, cx)).ok();
+                    })
+                    .child(div().text_sm().text_color(text).child(label))
+                    .into_any_element()
+            })
+            .collect();
+
+        overlay(theme.clone(), 120., 560., vec![
+            div()
+                .w_full()
+                .px_3()
+                .py_2()
+                .text_color(theme.text)
+                .border_b_1()
+                .border_color(theme.border)
+                .child("Open Recent")
+                .into_any_element(),
+            if items.is_empty() {
+                div()
+                    .px_3()
+                    .py_2()
+                    .text_sm()
+                    .text_color(theme.text_muted)
+                    .child("No recent repositories")
+                    .into_any_element()
+            } else {
+                v_flex()
+                    .id("recent-list")
+                    .w_full()
+                    .overflow_y_scroll()
+                    .children(items)
+                    .into_any_element()
+            },
+        ])
+    }
+
     fn render_prompt(&self) -> AnyElement {
         let theme = self.theme.clone();
         let (title, input) = self
@@ -3247,9 +3544,11 @@ impl GraphView {
             "col-commit" => self.columns.commit = !self.columns.commit,
             "untracked" => {
                 self.include_untracked = !self.include_untracked;
-                let Some(repo) = self.active_repo().cloned() else {
-                    return;
-                };
+        let Some(repo) = self.active_repo().cloned() else {
+            self.rows_dirty = true;
+            cx.notify();
+            return;
+        };
                 self.status = git::status(&repo.path, self.include_untracked);
                 self.rows_dirty = true;
             }
@@ -3349,7 +3648,7 @@ impl GraphView {
                 self.remove_active_repo(cx);
                 return;
             }
-            "open-repo" | "open-workspace" | "save-workspace" => {
+            "open-repo" | "open-workspace" | "save-workspace" | "open-recent" => {
                 self.on_chip(id, cx);
                 return;
             }

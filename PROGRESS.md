@@ -80,7 +80,13 @@
   - 拖拽文件夹/仓库到窗口（`ExternalPaths` + `.on_drop`）
   - Workspace 文件 `.gitviz-workspace`（新 `src/workspace.rs`：`parse`/`serialize`/`expand_tilde`/`expand_roots`），命令面板 “Open workspace…”（原生文件选择器）/“Save workspace…”（`prompt_for_new_path`），也支持作为命令行参数
   - **新增 `workspace` 模块 4 个单测（解析/序列化/tilde/expand_roots）**；`tilde` 逻辑从 `view.rs` 移到 `workspace.rs`
-- 验证更新：独立 crate **44 单测 + 23 集成**；全量 **68 单测 + 23 集成 = 91 项全部通过**。
+- 批次 36（A 项）：**欢迎页 + Open Recent + 原生菜单栏 + 快捷键调整**
+  - 未打开仓库时展示欢迎页（Open Repository…/Open Workspace… 按钮 + Open Recent 列表）；打开仓库后才显示 Git Graph
+  - Open Recent：`~/.config/gitviz/recent`（记住最近打开的仓库/工作区），欢迎页与 File 菜单均可用；上一次的 roots 也持久化到 `~/.config/gitviz/roots`，下次启动直接恢复
+  - 新 `src/actions.rs`（`actions!`）与原生菜单栏 File/View/Window/Help（Open Repository/Workspace、Save Workspace、Open Recent、Switch Repository、Toggle Theme、Refresh、Find、Minimize/Zoom、Quit），在 `view.rs` 用 `.on_action` 处理
+  - `⌘P` 打开命令面板、`⇧⌘P` 切换仓库（对齐常见编辑器）
+  - 修复首次编译后发现的两个真实问题：**commit 列表空白**（body 容器用了 `items_center`，导致 `uniform_list` 没被拉伸到全高 → 改为 `flex_row` 默认 stretch）；**Finder 打开时无内容**（忽略 `-psn_*` 参数；不再扫描整个 `$HOME`，改为「上次的 roots → 当前目录 → 空（欢迎页）」，并在 discovery 跳过 `Library/Desktop/Documents/Downloads` 等目录以避免隐私/网络卷弹窗）
+- 验证更新：全量 **70 单测 + 23 集成 = 93 项全部通过**；release DMG 已重新打包，截图确认欢迎页与 Git Graph 均正常。
 - 验证：非 UI 逻辑（含上述所有 git 单测/集成测试）已在独立 crate 跑通 **36 单测 + 20 集成**；仅 `view.rs`/`theme.rs` 未编译。
 - 批次 34（A 项）：**分支 ahead/behind**——`git rev-list --left-right --count <branch>...HEAD`（`parse_ahead_behind`/`ahead_behind`），在 load 时缓存到 `branch_tracking`，分支面板显示 ↑ahead / ↓behind。**新增 `parse_ahead_behind` 单测、`reports_ahead_behind_counts` 集成测试、`build_tree_rows` 文件树单测**
 - 验证更新：独立 crate 目前 **37 单测 + 21 集成 = 58 项全部通过**。

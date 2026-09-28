@@ -3,6 +3,7 @@
 //! Exposing the modules as a library (in addition to the `gitviz` binary)
 //! lets integration tests exercise the git/config/layout logic directly.
 
+pub mod actions;
 pub mod config;
 pub mod discovery;
 pub mod emoji;
