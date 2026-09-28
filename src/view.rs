@@ -3664,8 +3664,12 @@ impl GraphView {
                     .py_1()
                     .gap_2()
                     .child(
-                        div()
+                        h_flex()
                             .id(format!("branch-toggle-{}", name))
+                            .flex_1()
+                            .min_w_0()
+                            .gap_2()
+                            .items_center()
                             .cursor_pointer()
                             .on_click(move |_: &ClickEvent, window, cx| {
                                 let _ = window;
@@ -3680,9 +3684,15 @@ impl GraphView {
                                     })
                                     .ok();
                             })
-                            .child(checkbox(checked, &theme)),
+                            .child(checkbox(checked, &theme))
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_color(theme.text)
+                                    .child(name.clone()),
+                            ),
                     )
-                    .child(div().flex_1().text_color(theme.text).child(name.clone()))
                     .when_some(self.branch_tracking.get(name).copied(), |this, (ahead, behind)| {
                         let mut parts = Vec::new();
                         if ahead > 0 {
