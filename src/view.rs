@@ -3996,7 +3996,12 @@ impl GraphView {
             .map(|name| {
                 let copy_name = name.clone();
                 let checkout_name = name.clone();
+                let fetch_remote = name
+                    .split_once('/')
+                    .map(|(remote, _)| remote.to_string())
+                    .unwrap_or_else(|| name.clone());
                 let weak_checkout = weak.clone();
+                let weak_fetch = weak.clone();
                 let theme_row = theme.clone();
                 h_flex()
                     .w_full()
@@ -4012,6 +4017,22 @@ impl GraphView {
                             .text_color(theme.text)
                             .child(name.clone()),
                     )
+                    .child(action_button(
+                        format!("remote-branch-fetch-{name}"),
+                        "Fetch",
+                        &theme_row,
+                        move |cx| {
+                            let remote = fetch_remote.clone();
+                            weak_fetch
+                                .update(cx, |this, cx| {
+                                    this.run_op(
+                                        move |repo| git::fetch_remote(&repo.path, &remote),
+                                        cx,
+                                    )
+                                })
+                                .ok();
+                        },
+                    ))
                     .child(action_button(
                         format!("remote-branch-checkout-{name}"),
                         "Checkout",
