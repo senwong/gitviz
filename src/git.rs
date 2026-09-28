@@ -541,6 +541,16 @@ pub fn push_tag(repo: &Path, name: &str) -> anyhow::Result<()> {
     run(repo, &["push", "origin", name]).map(|_| ())
 }
 
+/// Discards all working tree and index changes, optionally removing untracked
+/// files (`git reset --hard` + `git clean -fd`).
+pub fn discard_all(repo: &Path, include_untracked: bool) -> anyhow::Result<()> {
+    run(repo, &["reset", "--hard"])?;
+    if include_untracked {
+        run(repo, &["clean", "-fd"])?;
+    }
+    Ok(())
+}
+
 pub fn stash_push(repo: &Path, include_untracked: bool) -> anyhow::Result<()> {
     let args: Vec<&str> = if include_untracked {
         vec!["stash", "push", "--include-untracked"]

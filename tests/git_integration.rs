@@ -244,6 +244,19 @@ fn cherry_pick_and_merge() {
 }
 
 #[test]
+fn discards_uncommitted_changes() {
+    let repo = TempRepo::new("discard");
+    repo.commit("a.txt", "1\n", "one");
+
+    std::fs::write(repo.path.join("a.txt"), "changed\n").unwrap();
+    std::fs::write(repo.path.join("untracked.txt"), "new\n").unwrap();
+    assert!(!git::status(&repo.path, true).is_empty());
+
+    git::discard_all(&repo.path, true).unwrap();
+    assert!(git::status(&repo.path, true).is_empty());
+}
+
+#[test]
 fn remotes_are_readable() {
     let repo = TempRepo::new("remote");
     repo.commit("a.txt", "1\n", "one");

@@ -172,6 +172,23 @@ fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
         .collect()
 }
 
+fn find_parent_index(commits: &[Commit], index: usize) -> Option<usize> {
+    let parent = commits.get(index)?.parents.first()?.clone();
+    commits.iter().position(|commit| commit.sha == parent)
+}
+
+fn find_child_index(commits: &[Commit], index: usize) -> Option<usize> {
+    let sha = commits.get(index)?.sha.clone();
+    (0..index)
+        .rev()
+        .find(|&candidate| {
+            commits[candidate]
+                .parents
+                .iter()
+                .any(|parent| parent == &sha)
+        })
+}
+
 fn find_matches(commits: &[Commit], query: &str) -> Vec<usize> {
     if query.is_empty() {
         return Vec::new();
@@ -285,6 +302,8 @@ enum MenuAction {
     StashPop,
     StashDrop,
     StashBranch,
+    StashChanges,
+    DiscardChanges,
 }
 
 struct Menu {
@@ -325,6 +344,8 @@ impl MenuAction {
             MenuAction::StashPop => "Pop Stash",
             MenuAction::StashDrop => "Drop Stash",
             MenuAction::StashBranch => "Create Branch From Stash…",
+            MenuAction::StashChanges => "Stash Changes",
+            MenuAction::DiscardChanges => "Discard Changes (reset --hard)",
         }
     }
 }
@@ -668,6 +689,22 @@ impl GraphView {
                 }
                 "g" => {
                     self.jump_match(if keystroke.modifiers.shift { -1 } else { 1 }, cx);
+                    return;
+                }
+                "up" => {
+                    if let Some(index) = self.selected_commit_index()
+                        && let Some(parent) = find_parent_index(&self.commits, index)
+                    {
+                        self.select_row(RowKind::Commit(parent), cx);
+                    }
+                    return;
+                }
+                "down" => {
+                    if let Some(index) = self.selected_commit_index()
+                        && let Some(child) = find_child_index(&self.commits, index)
+                    {
+                        self.select_row(RowKind::Commit(child), cx);
+                    }
                     return;
                 }
                 "f" => self.search_active = !self.search_active,
@@ -1072,7 +1109,10 @@ impl GraphView {
                     MenuAction::StashBranch,
                 ],
             ),
-            RowKind::Uncommitted => (MenuContext::Uncommitted, vec![]),
+            RowKind::Uncommitted => (
+                MenuContext::Uncommitted,
+                vec![MenuAction::StashChanges, MenuAction::DiscardChanges],
+            ),
         };
         self.menu = Some(Menu {
             x,
@@ -1170,8 +1210,15 @@ impl GraphView {
                 _ => {}
             },
             MenuContext::Uncommitted => {
-                if let MenuAction::StashDrop = action {
-                    // no-op
+                let include_untracked = self.include_untracked;
+                match action {
+                    MenuAction::StashChanges => {
+                        self.run_op(move |repo| git::stash_push(&repo.path, include_untracked), cx)
+                    }
+                    MenuAction::DiscardChanges => {
+                        self.run_op(move |repo| git::discard_all(&repo.path, include_untracked), cx)
+                    }
+                    _ => {}
                 }
             }
         }
@@ -3230,5 +3277,20 @@ mod tests {
         assert!(should_load_more(4, 5));
         assert!(!should_load_more(2, 5));
         assert!(!should_load_more(0, 0));
+    }
+
+    #[test]
+    fn parent_and_child_navigation() {
+        let mut a = commit("a", "A", "x");
+        a.parents = vec!["b".to_string()];
+        let mut b = commit("b", "B", "x");
+        b.parents = vec!["c".to_string()];
+        let c = commit("c", "C", "x");
+        let commits = vec![a, b, c];
+
+        assert_eq!(find_parent_index(&commits, 0), Some(1));
+        assert_eq!(find_parent_index(&commits, 2), None);
+        assert_eq!(find_child_index(&commits, 1), Some(0));
+        assert_eq!(find_child_index(&commits, 0), None);
     }
 }
