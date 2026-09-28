@@ -2015,13 +2015,26 @@ impl Render for GraphView {
             .bg(theme.panel)
             .border_b_1()
             .border_color(theme.border)
-            .child(div().text_color(theme.text).child(repo_name))
+            .child(
+                div()
+                    .text_color(theme.text)
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(repo_name),
+            )
             .child(
                 div()
                     .text_sm()
                     .text_color(theme.text_muted)
                     .child(self.branch.clone().unwrap_or_default()),
             )
+            .when(self.loading, |this| {
+                this.child(
+                    div()
+                        .text_sm()
+                        .text_color(theme.accent)
+                        .child("loading…"),
+                )
+            })
             .child(div().flex_1())
             .child(chip("Local", self.filter.branches, "filter-local", weak.clone(), theme.clone()))
             .child(chip("Remote", self.filter.remotes, "filter-remote", weak.clone(), theme.clone()))
