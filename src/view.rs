@@ -123,6 +123,7 @@ pub struct GraphView {
     use_full_refs: bool,
     fetch_prune: bool,
     fetch_prune_tags: bool,
+    show_detail: bool,
     color_preset: usize,
     branch_globs: Vec<String>,
     custom_lane_colors: Vec<String>,
@@ -228,6 +229,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Pull current branch", "pull"),
     ("Toggle stashes", "toggle-stashes"),
     ("Toggle uncommitted changes", "toggle-uncommitted"),
+    ("Toggle detail panel", "toggle-detail"),
     ("Branch filter", "branch-filter"),
     ("Settings", "settings"),
     ("Find", "find"),
@@ -647,6 +649,7 @@ impl GraphView {
             use_full_refs: false,
             fetch_prune: false,
             fetch_prune_tags: false,
+            show_detail: true,
             color_preset: 0,
             branch_globs: Vec::new(),
             custom_lane_colors: Vec::new(),
@@ -1634,6 +1637,7 @@ impl GraphView {
         self.filter.only_tags = config.only_tags;
         self.fetch_prune = config.fetch_prune;
         self.fetch_prune_tags = config.fetch_prune_tags;
+        self.show_detail = config.show_detail;
         self.repo_order = RepoOrder::from_str(&config.repo_order);
         self.branch_globs = config.branch_globs;
         self.custom_lane_colors = config.lane_colors;
@@ -1832,6 +1836,7 @@ impl GraphView {
             only_tags: self.filter.only_tags,
             fetch_prune: self.fetch_prune,
             fetch_prune_tags: self.fetch_prune_tags,
+            show_detail: self.show_detail,
             repo_order: self.repo_order.as_str().to_string(),
             branch_globs: self.branch_globs.clone(),
             lane_colors: self.custom_lane_colors.clone(),
@@ -2247,6 +2252,7 @@ impl Render for GraphView {
             .child(chip("1st parent", self.filter.first_parent, "filter-first", weak.clone(), theme.clone()))
             .child(chip("Stashes", self.show_stashes, "toggle-stashes", weak.clone(), theme.clone()))
             .child(chip("Changes", self.show_uncommitted, "toggle-uncommitted", weak.clone(), theme.clone()))
+            .child(chip("Detail", self.show_detail, "toggle-detail", weak.clone(), theme.clone()))
             .child(div().w(px(1.)).h(px(16.)).bg(theme.border))
             .child(chip("Branches", self.branch_filter.open, "branch-filter", weak.clone(), theme.clone()))
             .child(chip("Settings", self.settings_open, "settings", weak.clone(), theme.clone()))
@@ -2333,7 +2339,8 @@ impl Render for GraphView {
             .into_any_element()
         };
 
-        let detail = self.selected.is_some().then(|| self.render_detail(weak.clone()));
+        let detail = (self.show_detail && self.selected.is_some())
+            .then(|| self.render_detail(weak.clone()));
 
         let palette = self.palette.open.then(|| self.render_palette(weak.clone()));
         let commands = self.commands.open.then(|| self.render_commands(weak.clone()));
@@ -2507,6 +2514,10 @@ impl GraphView {
             "toggle-uncommitted" => {
                 self.show_uncommitted = !self.show_uncommitted;
                 self.rows_dirty = true;
+                cx.notify();
+            }
+            "toggle-detail" => {
+                self.show_detail = !self.show_detail;
                 cx.notify();
             }
             "branch-filter" => {
@@ -2698,6 +2709,25 @@ impl GraphView {
                 }
             }
             _ => {}
+        }
+
+        if matches!(
+            id,
+            "filter-local"
+                | "filter-remote"
+                | "filter-tags"
+                | "filter-first"
+                | "toggle-stashes"
+                | "toggle-uncommitted"
+                | "toggle-detail"
+                | "width-date-minus"
+                | "width-date-plus"
+                | "width-author-minus"
+                | "width-author-plus"
+                | "width-commit-minus"
+                | "width-commit-plus"
+        ) {
+            self.export_repo_config(cx);
         }
     }
 

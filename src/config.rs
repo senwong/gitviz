@@ -38,6 +38,7 @@ pub struct RepoConfig {
     pub only_tags: bool,
     pub fetch_prune: bool,
     pub fetch_prune_tags: bool,
+    pub show_detail: bool,
     pub repo_order: String,
     /// Branch glob patterns (e.g. `heads/feature/*`); empty means show all.
     pub branch_globs: Vec<String>,
@@ -88,6 +89,7 @@ impl Default for RepoConfig {
             only_tags: false,
             fetch_prune: false,
             fetch_prune_tags: false,
+            show_detail: true,
             repo_order: "name".to_string(),
             branch_globs: Vec::new(),
             lane_colors: Vec::new(),
@@ -150,6 +152,7 @@ impl RepoConfig {
                 "only_tags" => config.only_tags = flag,
                 "fetch_prune" => config.fetch_prune = flag,
                 "fetch_prune_tags" => config.fetch_prune_tags = flag,
+                "show_detail" => config.show_detail = flag,
                 "repo_order" => config.repo_order = value.to_string(),
                 "branch_globs" => {
                     config.branch_globs = split_list(value);
@@ -201,6 +204,7 @@ impl RepoConfig {
             ("only_tags", self.only_tags),
             ("fetch_prune", self.fetch_prune),
             ("fetch_prune_tags", self.fetch_prune_tags),
+            ("show_detail", self.show_detail),
         ] {
             output.push_str(&format!("{key}={value}\n"));
         }
@@ -274,6 +278,7 @@ mod tests {
         config.only_tags = true;
         config.fetch_prune = true;
         config.fetch_prune_tags = true;
+        config.show_detail = false;
         config.pr_provider = "https://git.example.com/{owner}/{repo}/compare/{base}...{head}".to_string();
         config.issue_provider = "https://bugs.example.com/{issue}".to_string();
         config.save(&dir).unwrap();
@@ -302,6 +307,7 @@ mod tests {
         assert!(loaded.only_tags);
         assert!(loaded.fetch_prune);
         assert!(loaded.fetch_prune_tags);
+        assert!(!loaded.show_detail);
         assert_eq!(loaded.graph_style, "angular");
         assert_eq!(
             loaded.pr_provider,
