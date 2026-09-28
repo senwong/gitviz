@@ -124,7 +124,7 @@ pub struct GraphView {
     fetch_prune: bool,
     fetch_prune_tags: bool,
     show_detail: bool,
-    remembered_selection: std::collections::HashMap<String, String>,
+    remembered_selection: std::collections::HashMap<std::path::PathBuf, String>,
     pending_select_sha: Option<String>,
     color_preset: usize,
     branch_globs: Vec<String>,
