@@ -3677,6 +3677,7 @@ impl GraphView {
                 .overflow_y_scroll()
                 .children(items)
                 .into_any_element(),
+            overlay_hint(&theme, "Enter/Esc to close"),
         ])
     }
 
@@ -3714,30 +3715,33 @@ impl GraphView {
             ),
         ];
 
-        let mut items: Vec<AnyElement> = toggles
-            .into_iter()
-            .map(|(label, on, id)| {
-                let weak = weak.clone();
-                let theme = theme.clone();
-                h_flex()
-                    .id(id)
-                    .w_full()
-                    .px_3()
-                    .py_1()
-                    .gap_2()
-                    .on_click(move |_: &ClickEvent, window, cx| {
-                        let _ = window;
-                        weak.update(cx, |this, cx| this.toggle_setting(id, cx)).ok();
-                    })
-                    .child(
-                        div()
-                            .text_color(if on { theme.accent } else { theme.text_muted })
-                            .child(if on { "[x]" } else { "[ ]" }),
-                    )
-                    .child(div().text_color(theme.text).child(label))
-                    .into_any_element()
-            })
-            .collect();
+        let mut items: Vec<AnyElement> = vec![section_label(&theme, "Display & behavior")];
+        items.extend(
+            toggles
+                .into_iter()
+                .map(|(label, on, id)| {
+                    let weak = weak.clone();
+                    let theme = theme.clone();
+                    h_flex()
+                        .id(id)
+                        .w_full()
+                        .px_3()
+                        .py_1()
+                        .gap_2()
+                        .on_click(move |_: &ClickEvent, window, cx| {
+                            let _ = window;
+                            weak.update(cx, |this, cx| this.toggle_setting(id, cx)).ok();
+                        })
+                        .child(
+                            div()
+                                .text_color(if on { theme.accent } else { theme.text_muted })
+                                .child(if on { "[x]" } else { "[ ]" }),
+                        )
+                        .child(div().text_color(theme.text).child(label))
+                        .into_any_element()
+                }),
+        );
+        items.push(section_label(&theme, "Actions"));
 
         for (label, id) in [
             ("Cycle repository order (name/path/given)", "repo-order"),
@@ -3936,6 +3940,7 @@ impl GraphView {
                 .overflow_y_scroll()
                 .children(items)
                 .into_any_element(),
+            overlay_hint(&theme, "Esc to close"),
         ])
     }
 
@@ -4232,6 +4237,19 @@ fn action_button(
         .hover(move |this| this.bg(hover_color))
         .on_click(move |_: &ClickEvent, _window, cx| handler(cx))
         .child(label)
+}
+
+/// A section heading inside a panel.
+fn section_label(theme: &Theme, text: &str) -> AnyElement {
+    div()
+        .w_full()
+        .px_3()
+        .pt_2()
+        .pb_1()
+        .text_sm()
+        .text_color(theme.text_muted)
+        .child(text.to_string())
+        .into_any_element()
 }
 
 /// A one-line hint shown at the bottom of an overlay, e.g. key hints.
