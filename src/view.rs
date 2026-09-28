@@ -540,6 +540,35 @@ impl MenuAction {
     }
 }
 
+/// Every context-menu action, for the settings panel.
+const MENU_ACTIONS: &[MenuAction] = &[
+    MenuAction::CherryPick,
+    MenuAction::CherryPickEmpty,
+    MenuAction::Revert,
+    MenuAction::Merge,
+    MenuAction::MergeNoFf,
+    MenuAction::MergeSquash,
+    MenuAction::Rebase,
+    MenuAction::ResetSoft,
+    MenuAction::ResetMixed,
+    MenuAction::ResetHard,
+    MenuAction::Checkout,
+    MenuAction::Drop,
+    MenuAction::CreateBranch,
+    MenuAction::CreateTag,
+    MenuAction::CreateAnnotatedTag,
+    MenuAction::Push,
+    MenuAction::CopySha,
+    MenuAction::CopyMessage,
+    MenuAction::CopyRef,
+    MenuAction::StashApply,
+    MenuAction::StashPop,
+    MenuAction::StashDrop,
+    MenuAction::StashBranch,
+    MenuAction::StashChanges,
+    MenuAction::DiscardChanges,
+];
+
 fn visible_actions(items: &[MenuAction], hidden: &[String]) -> Vec<MenuAction> {
     items
         .iter()
@@ -4128,6 +4157,42 @@ impl GraphView {
             );
         }
 
+        items.push(section_label(&theme, "Hidden context-menu actions"));
+        for action in MENU_ACTIONS {
+            let key = action.key();
+            let label = action.label();
+            let hidden = self.hidden_actions.iter().any(|candidate| candidate == key);
+            let weak_toggle = weak.clone();
+            let theme_row = theme.clone();
+            let key_owned = key.to_string();
+            items.push(
+                h_flex()
+                    .id(format!("hide-{key}"))
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .gap_2()
+                    .items_center()
+                    .on_click(move |_: &ClickEvent, window, cx| {
+                        let _ = window;
+                        let key = key_owned.clone();
+                        weak_toggle
+                            .update(cx, |this, cx| {
+                                if this.hidden_actions.iter().any(|candidate| candidate == &key) {
+                                    this.hidden_actions.retain(|candidate| candidate != &key);
+                                } else {
+                                    this.hidden_actions.push(key);
+                                }
+                                cx.notify();
+                            })
+                            .ok();
+                    })
+                    .child(toggle_switch(!hidden, &theme_row))
+                    .child(div().text_color(theme.text).child(label))
+                    .into_any_element(),
+            );
+        }
+
         items.push(
             div()
                 .w_full()
@@ -6339,6 +6404,15 @@ mod tests {
                 (Some(3), Some(3), " tail"),
             ]
         );
+    }
+
+    #[test]
+    fn menu_action_keys_are_unique() {
+        let mut keys: Vec<&str> = MENU_ACTIONS.iter().map(|action| action.key()).collect();
+        let count = keys.len();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), count, "duplicate context-menu action keys");
     }
 
     fn changed(path: &str) -> ChangedFile {
