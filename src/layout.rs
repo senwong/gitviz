@@ -83,6 +83,124 @@ fn first_free_lane(lanes: &mut Vec<Option<String>>) -> usize {
     }
 }
 
+/// How merge/branch connectors between lanes are drawn, mirroring
+/// vscode-git-graph's "Graph Style" setting.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum GraphStyle {
+    /// Smooth quadratic curves (the default).
+    #[default]
+    Rounded,
+    /// Straight diagonal lines.
+    Angular,
+}
+
+impl GraphStyle {
+    pub fn parse(value: &str) -> Self {
+        if value.trim().eq_ignore_ascii_case("angular") {
+            GraphStyle::Angular
+        } else {
+            GraphStyle::Rounded
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            GraphStyle::Rounded => "rounded",
+            GraphStyle::Angular => "angular",
+        }
+    }
+
+    pub fn toggled(self) -> Self {
+        match self {
+            GraphStyle::Rounded => GraphStyle::Angular,
+            GraphStyle::Angular => GraphStyle::Rounded,
+        }
+    }
+}
+
+/// A single connector stroke for one row.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SegmentKind {
+    Line {
+        from: (f32, f32),
+        to: (f32, f32),
+    },
+    Curve {
+        from: (f32, f32),
+        to: (f32, f32),
+        control: (f32, f32),
+    },
+}
+
+/// One stroke to paint: its geometry plus which lane's colour to use.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Segment {
+    pub kind: SegmentKind,
+    pub color_lane: usize,
+}
+
+/// Computes the connector strokes for one commit row. Coordinates are lane
+/// units on the x axis and row fractions (0.0 top, 0.5 middle, 1.0 bottom) on
+/// the y axis; the renderer scales them to pixels.
+pub fn row_segments(commit: &Commit, style: GraphStyle) -> Vec<Segment> {
+    let mut segments = Vec::new();
+    let lane = commit.lane as f32;
+
+    for &through in &commit.through {
+        segments.push(Segment {
+            kind: SegmentKind::Line {
+                from: (through as f32, 0.0),
+                to: (through as f32, 1.0),
+            },
+            color_lane: through,
+        });
+    }
+    if commit.top_line {
+        segments.push(Segment {
+            kind: SegmentKind::Line {
+                from: (lane, 0.0),
+                to: (lane, 0.5),
+            },
+            color_lane: commit.lane,
+        });
+    }
+    if commit.bottom_line {
+        segments.push(Segment {
+            kind: SegmentKind::Line {
+                from: (lane, 0.5),
+                to: (lane, 1.0),
+            },
+            color_lane: commit.lane,
+        });
+    }
+    for &incoming in &commit.incoming {
+        let from = (incoming as f32, 0.0);
+        let to = (lane, 0.5);
+        segments.push(Segment {
+            // Vertical tangent at the top, horizontal into the dot.
+            kind: bend(from, to, (from.0, to.1), style),
+            color_lane: incoming,
+        });
+    }
+    for &outgoing in &commit.outgoing {
+        let from = (lane, 0.5);
+        let to = (outgoing as f32, 1.0);
+        segments.push(Segment {
+            // Horizontal out of the dot, vertical tangent at the bottom.
+            kind: bend(from, to, (to.0, from.1), style),
+            color_lane: commit.lane,
+        });
+    }
+    segments
+}
+
+fn bend(from: (f32, f32), to: (f32, f32), control: (f32, f32), style: GraphStyle) -> SegmentKind {
+    match style {
+        GraphStyle::Rounded => SegmentKind::Curve { from, to, control },
+        GraphStyle::Angular => SegmentKind::Line { from, to },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,5 +273,103 @@ mod tests {
         let lanes = assign_lanes(&mut commits);
         assert!(lanes >= 1);
         assert!(commits.iter().all(|commit| commit.lane < lanes));
+    }
+
+    #[test]
+    fn graph_style_round_trips_through_strings() {
+        assert_eq!(GraphStyle::parse("angular"), GraphStyle::Angular);
+        assert_eq!(GraphStyle::parse("Angular"), GraphStyle::Angular);
+        assert_eq!(GraphStyle::parse(" rounded "), GraphStyle::Rounded);
+        assert_eq!(GraphStyle::parse("garbage"), GraphStyle::Rounded);
+        assert_eq!(GraphStyle::Rounded.as_str(), "rounded");
+        assert_eq!(GraphStyle::Angular.as_str(), "angular");
+        assert_eq!(GraphStyle::Rounded.toggled(), GraphStyle::Angular);
+        assert_eq!(GraphStyle::Angular.toggled(), GraphStyle::Rounded);
+    }
+
+    #[test]
+    fn linear_history_has_no_bends() {
+        let mut commits = vec![
+            commit("c", &["b"]),
+            commit("b", &["a"]),
+            commit("a", &[]),
+        ];
+        assign_lanes(&mut commits);
+        // Every segment is a straight vertical line, no curves and no incoming
+        // or outgoing bends.
+        for commit in &commits {
+            for segment in row_segments(commit, GraphStyle::Rounded) {
+                assert!(matches!(segment.kind, SegmentKind::Line { .. }));
+                assert_eq!(segment.color_lane, commit.lane);
+            }
+        }
+        assert!(row_segments(&commits[1], GraphStyle::Rounded).len() == 2);
+    }
+
+    #[test]
+    fn merge_produces_a_bend_on_the_right_lane() {
+        let mut commits = vec![
+            commit("m", &["a1", "b1"]),
+            commit("a1", &["root"]),
+            commit("b1", &["root"]),
+            commit("root", &[]),
+        ];
+        assign_lanes(&mut commits);
+        let merge = &commits[0];
+        assert_eq!(merge.outgoing, vec![1]);
+        let rounded = row_segments(merge, GraphStyle::Rounded);
+        let bend = rounded
+            .iter()
+            .find(|segment| matches!(segment.kind, SegmentKind::Curve { .. }))
+            .expect("merge has an outgoing curve");
+        assert_eq!(bend.color_lane, merge.lane);
+        match bend.kind {
+            SegmentKind::Curve { from, to, control } => {
+                assert_eq!(from, (0.0, 0.5));
+                assert_eq!(to, (1.0, 1.0));
+                // Horizontal out of the commit dot.
+                assert_eq!(control, (1.0, 0.5));
+            }
+            _ => unreachable!(),
+        }
+
+        let angular = row_segments(merge, GraphStyle::Angular);
+        assert!(angular.iter().all(|segment| matches!(segment.kind, SegmentKind::Line { .. })));
+    }
+
+    #[test]
+    fn incoming_bend_points_into_the_commit() {
+        // A commit whose first parent has already occupied lane 0, forcing an
+        // incoming connector from another lane.
+        let mut commits = vec![
+            commit("c1", &["c2", "c3"]),
+            commit("c2", &["c4"]),
+            commit("c3", &["c4"]),
+            commit("c4", &[]),
+        ];
+        assign_lanes(&mut commits);
+        let with_incoming = commits
+            .iter()
+            .find(|commit| !commit.incoming.is_empty())
+            .expect("some commit has an incoming lane");
+        let from_lane = with_incoming.incoming[0];
+        let segment = row_segments(with_incoming, GraphStyle::Rounded)
+            .into_iter()
+            .find(|segment| {
+                matches!(
+                    segment.kind,
+                    SegmentKind::Curve { from, .. } if from == (from_lane as f32, 0.0)
+                )
+            })
+            .expect("incoming curve exists");
+        assert_eq!(segment.color_lane, from_lane);
+        match segment.kind {
+            SegmentKind::Curve { to, control, .. } => {
+                assert_eq!(to, (with_incoming.lane as f32, 0.5));
+                // Vertical tangent at the top before curving in.
+                assert_eq!(control, (from_lane as f32, 0.5));
+            }
+            _ => unreachable!(),
+        }
     }
 }

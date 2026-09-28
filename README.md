@@ -122,7 +122,7 @@ script/build       cargo 包装脚本
   - [x] 详情显示包含该提交的分支/标签；悬浮信息条显示 refs / HEAD
 - 分支过滤
   - [x] 过滤面板（点击选择分支，客户端过滤）
-  - [~] `Show All` 已做；custom glob patterns（`glob_match` 已实现，UI/配置待接入）
+  - [x] `Show All` 已做；custom glob patterns（`glob_match` + 设置/命令面板 “Add branch glob…” + `.gitviz.conf`）
 - 查找（Find）
   - [x] 文案搜索（提交信息/作者/哈希），Cmd+F
   - [x] 高亮匹配（⌘G 导航）、date/ref 名称匹配
@@ -136,7 +136,7 @@ script/build       cargo 包装脚本
 - 列与外观
   - [x] Date / Author / Commit 列显示开关（设置面板）
   - [x] 深浅主题切换
-  - [~] 列宽 +/-（拖拽省略）、车道配色预设（自定义颜色/graph style 省略）；reference label 对齐/合并已做
+  - [x] 列宽 +/-（含拖拽）、车道配色预设（自定义颜色 + rounded/angular graph style）；reference label 对齐/合并已做
 - 消息渲染
   - [x] Emoji shortcode / gitmoji 替换
   - [x] Markdown 子集（粗体/斜体/行内代码）

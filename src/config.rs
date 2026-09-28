@@ -31,6 +31,8 @@ pub struct RepoConfig {
     pub hidden_actions: Vec<String>,
     /// Custom emoji shortcodes as `code:emoji`.
     pub emoji_mappings: Vec<String>,
+    /// Graph connector style: `rounded` (default) or `angular`.
+    pub graph_style: String,
 }
 
 impl Default for RepoConfig {
@@ -55,6 +57,7 @@ impl Default for RepoConfig {
             lane_colors: Vec::new(),
             hidden_actions: Vec::new(),
             emoji_mappings: Vec::new(),
+            graph_style: "rounded".to_string(),
         }
     }
 }
@@ -106,6 +109,7 @@ impl RepoConfig {
                 "emoji_mappings" => {
                     config.emoji_mappings = split_list(value);
                 }
+                "graph_style" => config.graph_style = value.to_string(),
                 _ => {}
             }
         }
@@ -143,6 +147,7 @@ impl RepoConfig {
             "emoji_mappings={}\n",
             self.emoji_mappings.join(";")
         ));
+        output.push_str(&format!("graph_style={}\n", self.graph_style));
         std::fs::write(Self::path(repo), output)?;
         Ok(())
     }
@@ -178,6 +183,7 @@ mod tests {
         config.lane_colors = vec!["#e06c75".to_string(), "#61afef".to_string()];
         config.hidden_actions = vec!["revert".to_string()];
         config.emoji_mappings = vec!["shipit:🚢".to_string()];
+        config.graph_style = "angular".to_string();
         config.save(&dir).unwrap();
 
         let loaded = RepoConfig::load(&dir).unwrap();
@@ -188,6 +194,7 @@ mod tests {
         assert_eq!(loaded.lane_colors, vec!["#e06c75", "#61afef"]);
         assert_eq!(loaded.hidden_actions, vec!["revert"]);
         assert_eq!(loaded.emoji_mappings, vec!["shipit:🚢"]);
+        assert_eq!(loaded.graph_style, "angular");
 
         let _ = std::fs::remove_dir_all(&dir);
     }

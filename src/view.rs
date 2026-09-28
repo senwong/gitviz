@@ -85,6 +85,7 @@ pub struct GraphView {
     custom_lane_colors: Vec<String>,
     hidden_actions: Vec<String>,
     custom_emoji: Vec<(String, String)>,
+    graph_style: layout::GraphStyle,
     date_short: bool,
     resize_drag: Option<ResizeDrag>,
     scroll_to_head_on_load: bool,
@@ -184,6 +185,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("End all code reviews", "end-reviews"),
     ("Resume last code review", "resume-review"),
     ("Stop reviewing this commit", "end-current-review"),
+    ("Add branch glob…", "add-glob"),
 ];
 
 fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
@@ -334,6 +336,7 @@ enum PromptAction {
     AddRemote,
     StashBranch,
     RenameBranch,
+    AddGlob,
 }
 
 struct DiffView {
@@ -496,6 +499,7 @@ impl GraphView {
             custom_lane_colors: Vec::new(),
             hidden_actions: Vec::new(),
             custom_emoji: Vec::new(),
+            graph_style: layout::GraphStyle::default(),
             date_short: false,
             resize_drag: None,
             scroll_to_head_on_load: false,
@@ -1120,12 +1124,8 @@ impl GraphView {
         self.branch_globs = config.branch_globs;
         self.custom_lane_colors = config.lane_colors;
         self.hidden_actions = config.hidden_actions;
-        self.custom_emoji = config
-            .emoji_mappings
-            .iter()
-            .filter_map(|mapping| mapping.split_once(':'))
-            .map(|(code, emoji)| (code.trim().to_string(), emoji.trim().to_string()))
-            .collect();
+        self.custom_emoji = parse_emoji_mappings(&config.emoji_mappings);
+        self.graph_style = layout::GraphStyle::parse(&config.graph_style);
     }
 
     fn sort_repos(&mut self) {
@@ -1182,6 +1182,7 @@ impl GraphView {
                 .iter()
                 .map(|(code, emoji)| format!("{code}:{emoji}"))
                 .collect(),
+            graph_style: self.graph_style.as_str().to_string(),
         };
         match config.save(&repo.path) {
             Ok(()) => {
@@ -1258,6 +1259,13 @@ impl GraphView {
             PromptAction::RenameBranch => {
                 let old = sha.clone();
                 self.run_op(move |repo| git::rename_branch(&repo.path, &old, &name), cx);
+            }
+            PromptAction::AddGlob => {
+                if !self.branch_globs.iter().any(|glob| glob == &name) {
+                    self.branch_globs.push(name);
+                }
+                self.export_repo_config(cx);
+                self.load(cx);
             }
         }
     }
@@ -1545,6 +1553,7 @@ impl Render for GraphView {
             match_cursor: self.match_cursor,
             date_short: self.date_short,
             custom_emoji: Arc::new(self.custom_emoji.clone()),
+            graph_style: self.graph_style,
         };
 
         let body: AnyElement = if let Some(error) = &self.error {
@@ -1666,6 +1675,15 @@ impl GraphView {
                     self.review.save();
                     cx.notify();
                 }
+            }
+            "add-glob" => {
+                self.prompt = Some(Prompt {
+                    title: "Branch glob (e.g. heads/feature/*)".to_string(),
+                    input: String::new(),
+                    action: PromptAction::AddGlob,
+                    sha: String::new(),
+                });
+                cx.notify();
             }
             "pr" => {
                 let branch = self.branch.clone().unwrap_or_default();
@@ -2438,6 +2456,11 @@ impl GraphView {
             ("Fetch: prune tags", self.fetch_prune_tags, "fetch-prune-tags"),
             ("File tree in details", self.file_tree, "file-tree"),
             ("Compact folders", self.compact_folders, "compact-folders"),
+            (
+                "Angular graph connectors",
+                self.graph_style == layout::GraphStyle::Angular,
+                "graph-style",
+            ),
         ];
 
         let mut items: Vec<AnyElement> = toggles
@@ -2478,6 +2501,7 @@ impl GraphView {
             ("Discovery depth −", "depth-minus"),
             ("Discovery depth +", "depth-plus"),
             ("Export configuration to .gitviz.conf", "export-config"),
+            ("Add branch glob…", "add-glob"),
             ("Clear branch globs", "clear-globs"),
             ("End all code reviews", "end-reviews"),
         ] {
@@ -2787,6 +2811,7 @@ impl GraphView {
             }
             "file-tree" => self.file_tree = !self.file_tree,
             "compact-folders" => self.compact_folders = !self.compact_folders,
+            "graph-style" => self.graph_style = self.graph_style.toggled(),
             "remote-heads" => {
                 self.show_remote_heads = !self.show_remote_heads;
                 self.load(cx);
@@ -2802,6 +2827,14 @@ impl GraphView {
             "date-short" => self.date_short = !self.date_short,
             "load-scroll-head" => self.scroll_to_head_on_load = !self.scroll_to_head_on_load,
             "clear-globs" => self.branch_globs.clear(),
+            "add-glob" => {
+                self.prompt = Some(Prompt {
+                    title: "Branch glob (e.g. heads/feature/*)".to_string(),
+                    input: String::new(),
+                    action: PromptAction::AddGlob,
+                    sha: String::new(),
+                });
+            }
             "ref-align" => {
                 self.ref_align = match self.ref_align {
                     RefAlign::Left => RefAlign::Right,
@@ -3113,6 +3146,7 @@ struct RowRenderContext {
     match_cursor: usize,
     date_short: bool,
     custom_emoji: Arc<Vec<(String, String)>>,
+    graph_style: layout::GraphStyle,
 }
 
 impl RowRenderContext {
@@ -3217,6 +3251,7 @@ impl RowRenderContext {
         _position: usize,
     ) -> AnyElement {
         let colors = self.lane_colors;
+        let graph_style = self.graph_style;
         let lane_area = (self.commits.iter().map(|c| c.lane).max().unwrap_or(0) + 1) as f32
             * LANE_WIDTH
             + 8.;
@@ -3234,7 +3269,7 @@ impl RowRenderContext {
         let canvas = gpui::canvas(
             move |_bounds: Bounds<Pixels>, _window: &mut Window, _cx: &mut App| for_paint.clone(),
             move |bounds: Bounds<Pixels>, commit: Commit, window: &mut Window, _cx: &mut App| {
-                paint_lanes(&mut *window, bounds, &commit, &colors);
+                paint_lanes(&mut *window, bounds, &commit, &colors, graph_style);
             },
         )
         .w(lane_area_px)
@@ -3364,6 +3399,16 @@ fn filter_by_globs(branches: &[String], globs: &[String]) -> Vec<String> {
         .iter()
         .filter(|branch| globs.iter().any(|pattern| glob_match(pattern, branch)))
         .cloned()
+        .collect()
+}
+
+/// Parses `.gitviz.conf` `emoji_mappings` entries of the form `code:emoji`.
+fn parse_emoji_mappings(mappings: &[String]) -> Vec<(String, String)> {
+    mappings
+        .iter()
+        .filter_map(|mapping| mapping.split_once(':'))
+        .filter(|(code, emoji)| !code.trim().is_empty() && !emoji.is_empty())
+        .map(|(code, emoji)| (code.trim().to_string(), emoji.trim().to_string()))
         .collect()
 }
 
@@ -3602,65 +3647,39 @@ fn find_issues(message: &str) -> Vec<String> {
     issues
 }
 
-fn paint_lanes(window: &mut Window, bounds: Bounds<Pixels>, commit: &Commit, colors: &[gpui::Rgba; 8]) {
-    let x = |lane: usize| bounds.origin.x + px(lane as f32 * LANE_WIDTH + LANE_WIDTH / 2.0);
-    let top = bounds.origin.y;
-    let middle = top + bounds.size.height / 2.0;
-    let bottom = top + bounds.size.height;
-    let color = colors[commit.lane % colors.len()];
+fn paint_lanes(
+    window: &mut Window,
+    bounds: Bounds<Pixels>,
+    commit: &Commit,
+    colors: &[gpui::Rgba; 8],
+    style: layout::GraphStyle,
+) {
+    let x = |lane: f32| bounds.origin.x + px(lane * LANE_WIDTH + LANE_WIDTH / 2.0);
+    let y = |fraction: f32| bounds.origin.y + px(bounds.size.height.as_f32() * fraction);
 
-    for &lane in &commit.through {
-        if let Ok(path) = {
-            let mut builder = gpui::PathBuilder::stroke(px(1.5));
-            builder.move_to(point(x(lane), top));
-            builder.line_to(point(x(lane), bottom));
-            builder.build()
-        } {
-            window.paint_path(path, colors[lane % colors.len()]);
-        }
-    }
-    if commit.top_line {
-        if let Ok(path) = {
-            let mut builder = gpui::PathBuilder::stroke(px(1.5));
-            builder.move_to(point(x(commit.lane), top));
-            builder.line_to(point(x(commit.lane), middle));
-            builder.build()
-        } {
-            window.paint_path(path, color);
-        }
-    }
-    if commit.bottom_line {
-        if let Ok(path) = {
-            let mut builder = gpui::PathBuilder::stroke(px(1.5));
-            builder.move_to(point(x(commit.lane), middle));
-            builder.line_to(point(x(commit.lane), bottom));
-            builder.build()
-        } {
-            window.paint_path(path, color);
-        }
-    }
-    for &lane in &commit.incoming {
-        if let Ok(path) = {
-            let mut builder = gpui::PathBuilder::stroke(px(1.5));
-            let from = point(x(lane), top);
-            let to = point(x(commit.lane), middle);
-            builder.move_to(from);
-            builder.curve_to(to, point(from.x, to.y));
-            builder.build()
-        } {
-            window.paint_path(path, colors[lane % colors.len()]);
-        }
-    }
-    for &lane in &commit.outgoing {
-        if let Ok(path) = {
-            let mut builder = gpui::PathBuilder::stroke(px(1.5));
-            let from = point(x(commit.lane), middle);
-            let to = point(x(lane), bottom);
-            builder.move_to(from);
-            builder.curve_to(to, point(to.x, from.y));
-            builder.build()
-        } {
-            window.paint_path(path, color);
+    for segment in layout::row_segments(commit, style) {
+        let color = colors[segment.color_lane % colors.len()];
+        match segment.kind {
+            layout::SegmentKind::Line { from, to } => {
+                if let Ok(path) = {
+                    let mut builder = gpui::PathBuilder::stroke(px(1.5));
+                    builder.move_to(point(x(from.0), y(from.1)));
+                    builder.line_to(point(x(to.0), y(to.1)));
+                    builder.build()
+                } {
+                    window.paint_path(path, color);
+                }
+            }
+            layout::SegmentKind::Curve { from, to, control } => {
+                if let Ok(path) = {
+                    let mut builder = gpui::PathBuilder::stroke(px(1.5));
+                    builder.move_to(point(x(from.0), y(from.1)));
+                    builder.curve_to(point(x(to.0), y(to.1)), point(x(control.0), y(control.1)));
+                    builder.build()
+                } {
+                    window.paint_path(path, color);
+                }
+            }
         }
     }
 }
@@ -3853,5 +3872,33 @@ mod tests {
         assert_eq!(find_parent_index(&commits, 2), None);
         assert_eq!(find_child_index(&commits, 1), Some(0));
         assert_eq!(find_child_index(&commits, 0), None);
+    }
+
+    #[test]
+    fn parses_custom_emoji_mappings() {
+        let mappings = vec![
+            "shipit:🚢".to_string(),
+            "  party : 🎉 ".to_string(),
+            "broken".to_string(),
+            ":nope".to_string(),
+        ];
+        let parsed = parse_emoji_mappings(&mappings);
+        assert_eq!(
+            parsed,
+            vec![
+                ("shipit".to_string(), "🚢".to_string()),
+                ("party".to_string(), "🎉".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn command_palette_includes_review_and_glob_commands() {
+        assert!(
+            COMMANDS
+                .iter()
+                .any(|(_, id)| *id == "end-current-review")
+        );
+        assert!(COMMANDS.iter().any(|(_, id)| *id == "add-glob"));
     }
 }
