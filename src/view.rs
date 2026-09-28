@@ -4330,7 +4330,17 @@ fn section_label(theme: &Theme, text: &str) -> AnyElement {
         .into_any_element()
 }
 
-/// A one-line hint shown at the bottom of an overlay, e.g. key hints.
+/// Returns `(thumb_top, thumb_height)` for a vertical scrollbar.
+fn scrollbar_thumb(current: f32, max: f32, viewport: f32) -> (f32, f32) {
+    if max <= 0.0 || viewport <= 0.0 {
+        return (0.0, viewport.max(0.0));
+    }
+    let fraction = (current / max).clamp(0.0, 1.0);
+    let total = viewport + max;
+    let thumb_height = (viewport * viewport / total).max(30.0);
+    (fraction * (viewport - thumb_height), thumb_height)
+}
+
 fn overlay_hint(theme: &Theme, text: &str) -> AnyElement {
     div()
         .w_full()
@@ -4610,13 +4620,12 @@ impl GraphView {
         if max_offset <= px(0.) {
             return div().w(px(10.)).h_full().flex_none().into_any_element();
         }
-        let current =
-            (-self.list_state.scroll_px_offset_for_scrollbar().y).clamp(px(0.), max_offset);
-        let viewport = self.list_state.viewport_bounds().size.height;
-        let fraction = (current.as_f32() / max_offset.as_f32()).clamp(0., 1.);
-        let total = viewport.as_f32() + max_offset.as_f32();
-        let thumb_height = px((viewport.as_f32() * viewport.as_f32() / total).max(30.));
-        let thumb_top = (viewport - thumb_height) * fraction;
+        let max = max_offset.as_f32();
+        let current = (-self.list_state.scroll_px_offset_for_scrollbar().y)
+            .as_f32()
+            .clamp(0.0, max);
+        let viewport = self.list_state.viewport_bounds().size.height.as_f32();
+        let (thumb_top, thumb_height) = scrollbar_thumb(current, max, viewport);
         div()
             .w(px(10.))
             .h_full()
@@ -4625,10 +4634,10 @@ impl GraphView {
             .child(
                 div()
                     .absolute()
-                    .top(thumb_top)
+                    .top(px(thumb_top))
                     .left(px(2.))
                     .w(px(6.))
-                    .h(thumb_height)
+                    .h(px(thumb_height))
                     .rounded_full()
                     .bg(theme.border),
             )
@@ -5812,6 +5821,19 @@ mod tests {
             ("subject".to_string(), String::new())
         );
         assert_eq!(split_subject_body(""), (String::new(), String::new()));
+    }
+
+    #[test]
+    fn scrollbar_thumb_spans_the_track() {
+        // At the top the thumb starts at 0.
+        let (top, height) = scrollbar_thumb(0.0, 1000.0, 500.0);
+        assert_eq!(top, 0.0);
+        assert!((height - 500.0 * 500.0 / 1500.0).abs() < 0.1);
+        // At the bottom the thumb ends at `viewport - height`.
+        let (top, _) = scrollbar_thumb(1000.0, 1000.0, 500.0);
+        assert!((top - (500.0 - 500.0 * 500.0 / 1500.0)).abs() < 0.1);
+        // No scrolling: full-height thumb.
+        assert_eq!(scrollbar_thumb(0.0, 0.0, 400.0), (0.0, 400.0));
     }
 
     fn changed(path: &str) -> ChangedFile {
