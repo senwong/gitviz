@@ -211,6 +211,39 @@ fn creates_branch_from_stash() {
 }
 
 #[test]
+fn cherry_pick_and_merge() {
+    let repo = TempRepo::new("pickmerge");
+    repo.commit("a.txt", "1\n", "one");
+
+    // Create a feature branch with a commit, then cherry-pick it onto main.
+    git::create_branch(&repo.path, "feature", None).unwrap();
+    repo.commit("f.txt", "feature\n", "feature work");
+    let feature_sha = git::log(&repo.path, 1, &LogFilter::default()).unwrap()[0]
+        .sha
+        .clone();
+    git::checkout_branch(&repo.path, "main").unwrap();
+
+    git::cherry_pick(&repo.path, &feature_sha).unwrap();
+    let subjects: Vec<String> = git::log(&repo.path, 10, &LogFilter::default())
+        .unwrap()
+        .into_iter()
+        .map(|commit| commit.subject)
+        .collect();
+    assert!(subjects.iter().any(|subject| subject == "feature work"));
+
+    // Merge the feature branch with --no-ff.
+    git::merge_no_ff(&repo.path, "feature").unwrap();
+    let head = git::log(&repo.path, 1, &LogFilter::default()).unwrap()[0]
+        .sha
+        .clone();
+    let detail = git::commit_detail(&repo.path, &head).unwrap();
+    // A merge commit has more than one parent; verify via the raw commit.
+    let parents = &git::log(&repo.path, 1, &LogFilter::default()).unwrap()[0].parents;
+    let _ = detail;
+    assert_eq!(parents.len(), 2);
+}
+
+#[test]
 fn remotes_are_readable() {
     let repo = TempRepo::new("remote");
     repo.commit("a.txt", "1\n", "one");

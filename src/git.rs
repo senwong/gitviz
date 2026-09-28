@@ -351,6 +351,46 @@ pub fn cherry_pick(repo: &Path, sha: &str) -> anyhow::Result<()> {
     run(repo, &["cherry-pick", sha]).map(|_| ())
 }
 
+pub fn cherry_pick_allow_empty(repo: &Path, sha: &str) -> anyhow::Result<()> {
+    run(repo, &["cherry-pick", "--allow-empty", sha]).map(|_| ())
+}
+
+pub fn merge_no_ff(repo: &Path, rev: &str) -> anyhow::Result<()> {
+    run(repo, &["merge", "--no-ff", rev]).map(|_| ())
+}
+
+pub fn merge_squash(repo: &Path, rev: &str) -> anyhow::Result<()> {
+    run(repo, &["merge", "--squash", rev]).map(|_| ())
+}
+
+/// The `fetch` arguments used by the Refresh button. Pure so it is testable.
+pub fn fetch_args(prune: bool, prune_tags: bool) -> Vec<String> {
+    let mut args = vec![
+        "fetch".to_string(),
+        "--all".to_string(),
+        "--tags".to_string(),
+        "--force".to_string(),
+    ];
+    if prune {
+        args.push("--prune".to_string());
+    }
+    if prune_tags {
+        args.push("--prune-tags".to_string());
+    }
+    args
+}
+
+pub fn fetch_with(repo: &Path, prune: bool, prune_tags: bool) -> anyhow::Result<()> {
+    let args = fetch_args(prune, prune_tags);
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run(repo, &refs).map(|_| ())
+}
+
+/// The extra flag for a force push, if any.
+pub fn push_force_flag(force: bool) -> Option<&'static str> {
+    force.then_some("--force-with-lease")
+}
+
 pub fn revert(repo: &Path, sha: &str) -> anyhow::Result<()> {
     run(repo, &["revert", "--no-edit", sha]).map(|_| ())
 }
@@ -811,6 +851,31 @@ mod tests {
             log_ref_args(&filter),
             vec!["--tags", "--not", "--branches", "--remotes"]
         );
+    }
+
+    #[test]
+    fn fetch_args_add_prune_flags() {
+        assert_eq!(
+            fetch_args(false, false),
+            vec!["fetch", "--all", "--tags", "--force"]
+        );
+        assert_eq!(
+            fetch_args(true, true),
+            vec![
+                "fetch",
+                "--all",
+                "--tags",
+                "--force",
+                "--prune",
+                "--prune-tags"
+            ]
+        );
+    }
+
+    #[test]
+    fn push_force_flag_only_when_forced() {
+        assert_eq!(push_force_flag(false), None);
+        assert_eq!(push_force_flag(true), Some("--force-with-lease"));
     }
 }
 

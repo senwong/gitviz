@@ -78,6 +78,8 @@ pub struct GraphView {
     file_tree: bool,
     compact_folders: bool,
     show_remote_heads: bool,
+    fetch_prune: bool,
+    fetch_prune_tags: bool,
     color_preset: usize,
     date_width: f32,
     author_width: f32,
@@ -257,8 +259,11 @@ struct DiffView {
 #[derive(Clone, Copy)]
 enum MenuAction {
     CherryPick,
+    CherryPickEmpty,
     Revert,
     Merge,
+    MergeNoFf,
+    MergeSquash,
     Rebase,
     ResetSoft,
     ResetMixed,
@@ -294,8 +299,11 @@ impl MenuAction {
     fn label(self) -> &'static str {
         match self {
             MenuAction::CherryPick => "Cherry Pick",
+            MenuAction::CherryPickEmpty => "Cherry Pick (allow empty)",
             MenuAction::Revert => "Revert",
             MenuAction::Merge => "Merge into Current Branch",
+            MenuAction::MergeNoFf => "Merge (no fast-forward)",
+            MenuAction::MergeSquash => "Merge (squash)",
             MenuAction::Rebase => "Rebase Current Branch onto This",
             MenuAction::ResetSoft => "Reset to Here (soft)",
             MenuAction::ResetMixed => "Reset to Here (mixed)",
@@ -355,6 +363,8 @@ impl GraphView {
             file_tree: false,
             compact_folders: true,
             show_remote_heads: false,
+            fetch_prune: false,
+            fetch_prune_tags: false,
             color_preset: 0,
             date_width: 150.,
             author_width: 130.,
@@ -1024,8 +1034,11 @@ impl GraphView {
                     MenuContext::Commit(commit.sha.clone()),
                     vec![
                         MenuAction::CherryPick,
+                        MenuAction::CherryPickEmpty,
                         MenuAction::Revert,
                         MenuAction::Merge,
+                        MenuAction::MergeNoFf,
+                        MenuAction::MergeSquash,
                         MenuAction::Rebase,
                         MenuAction::ResetSoft,
                         MenuAction::ResetMixed,
@@ -1068,8 +1081,17 @@ impl GraphView {
                 MenuAction::CherryPick => {
                     self.run_op(move |repo| git::cherry_pick(&repo.path, &sha), cx)
                 }
+                MenuAction::CherryPickEmpty => {
+                    self.run_op(move |repo| git::cherry_pick_allow_empty(&repo.path, &sha), cx)
+                }
                 MenuAction::Revert => self.run_op(move |repo| git::revert(&repo.path, &sha), cx),
                 MenuAction::Merge => self.run_op(move |repo| git::merge(&repo.path, &sha), cx),
+                MenuAction::MergeNoFf => {
+                    self.run_op(move |repo| git::merge_no_ff(&repo.path, &sha), cx)
+                }
+                MenuAction::MergeSquash => {
+                    self.run_op(move |repo| git::merge_squash(&repo.path, &sha), cx)
+                }
                 MenuAction::Rebase => self.run_op(move |repo| git::rebase(&repo.path, &sha), cx),
                 MenuAction::ResetSoft => {
                     self.run_op(move |repo| git::reset(&repo.path, &sha, ResetMode::Soft), cx)
@@ -1352,7 +1374,14 @@ impl GraphView {
                 self.search_active = !self.search_active;
                 cx.notify();
             }
-            "refresh" => self.run_op(|repo| git::fetch_all_tags(&repo.path), cx),
+            "refresh" => {
+                let prune = self.fetch_prune;
+                let prune_tags = self.fetch_prune_tags;
+                self.run_op(
+                    move |repo| git::fetch_with(&repo.path, prune, prune_tags),
+                    cx,
+                )
+            }
             "push" => self.run_op(|repo| git::push_current_branch(&repo.path), cx),
             "pr" => {
                 let branch = self.branch.clone().unwrap_or_default();
@@ -1945,6 +1974,8 @@ impl GraphView {
             ("Include reflog commits", self.include_reflogs, "reflogs"),
             ("Show remote HEAD refs", self.show_remote_heads, "remote-heads"),
             ("Only tag commits", self.filter.only_tags, "only-tags"),
+            ("Fetch: prune", self.fetch_prune, "fetch-prune"),
+            ("Fetch: prune tags", self.fetch_prune_tags, "fetch-prune-tags"),
             ("File tree in details", self.file_tree, "file-tree"),
             ("Compact folders", self.compact_folders, "compact-folders"),
         ];
@@ -2305,6 +2336,8 @@ impl GraphView {
                 self.load(cx);
                 return;
             }
+            "fetch-prune" => self.fetch_prune = !self.fetch_prune,
+            "fetch-prune-tags" => self.fetch_prune_tags = !self.fetch_prune_tags,
             "ref-align" => {
                 self.ref_align = match self.ref_align {
                     RefAlign::Left => RefAlign::Right,
