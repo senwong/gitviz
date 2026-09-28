@@ -84,6 +84,7 @@ pub struct GraphView {
     branch_globs: Vec<String>,
     custom_lane_colors: Vec<String>,
     hidden_actions: Vec<String>,
+    custom_emoji: Vec<(String, String)>,
     date_short: bool,
     resize_drag: Option<ResizeDrag>,
     scroll_to_head_on_load: bool,
@@ -182,6 +183,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Export config", "export-config"),
     ("End all code reviews", "end-reviews"),
     ("Resume last code review", "resume-review"),
+    ("Stop reviewing this commit", "end-current-review"),
 ];
 
 fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
@@ -493,6 +495,7 @@ impl GraphView {
             branch_globs: Vec::new(),
             custom_lane_colors: Vec::new(),
             hidden_actions: Vec::new(),
+            custom_emoji: Vec::new(),
             date_short: false,
             resize_drag: None,
             scroll_to_head_on_load: false,
@@ -1117,6 +1120,12 @@ impl GraphView {
         self.branch_globs = config.branch_globs;
         self.custom_lane_colors = config.lane_colors;
         self.hidden_actions = config.hidden_actions;
+        self.custom_emoji = config
+            .emoji_mappings
+            .iter()
+            .filter_map(|mapping| mapping.split_once(':'))
+            .map(|(code, emoji)| (code.trim().to_string(), emoji.trim().to_string()))
+            .collect();
     }
 
     fn sort_repos(&mut self) {
@@ -1168,6 +1177,11 @@ impl GraphView {
             branch_globs: self.branch_globs.clone(),
             lane_colors: self.custom_lane_colors.clone(),
             hidden_actions: self.hidden_actions.clone(),
+            emoji_mappings: self
+                .custom_emoji
+                .iter()
+                .map(|(code, emoji)| format!("{code}:{emoji}"))
+                .collect(),
         };
         match config.save(&repo.path) {
             Ok(()) => {
@@ -1530,6 +1544,7 @@ impl Render for GraphView {
             matches: Arc::new(self.matches.clone()),
             match_cursor: self.match_cursor,
             date_short: self.date_short,
+            custom_emoji: Arc::new(self.custom_emoji.clone()),
         };
 
         let body: AnyElement = if let Some(error) = &self.error {
@@ -1643,6 +1658,13 @@ impl GraphView {
                     && let Some(index) = self.commits.iter().position(|commit| commit.sha == sha)
                 {
                     self.select_row(RowKind::Commit(index), cx);
+                }
+            }
+            "end-current-review" => {
+                if let Some(sha) = self.detail_sha.clone() {
+                    self.review.remove_commit(&sha);
+                    self.review.save();
+                    cx.notify();
                 }
             }
             "pr" => {
@@ -1904,7 +1926,7 @@ impl GraphView {
                         .into_iter()
                         .map(|span| {
                             let text = if self.emoji_enabled {
-                                emoji::replace_shortcodes(&span.text)
+                                emoji::replace_with(&span.text, &self.custom_emoji)
                             } else {
                                 span.text
                             };
@@ -1919,7 +1941,7 @@ impl GraphView {
                 .lines()
                 .map(|line| {
                     let text = if self.emoji_enabled {
-                        emoji::replace_shortcodes(line)
+                        emoji::replace_with(line, &self.custom_emoji)
                     } else {
                         line.to_string()
                     };
@@ -3090,6 +3112,7 @@ struct RowRenderContext {
     matches: Arc<Vec<usize>>,
     match_cursor: usize,
     date_short: bool,
+    custom_emoji: Arc<Vec<(String, String)>>,
 }
 
 impl RowRenderContext {
@@ -3229,7 +3252,7 @@ impl RowRenderContext {
             format!("[{}] ", ref_names.join(", "))
         };
         let subject = if self.emoji_enabled {
-            emoji::replace_shortcodes(&commit.subject)
+            emoji::replace_with(&commit.subject, &self.custom_emoji)
         } else {
             commit.subject.clone()
         };

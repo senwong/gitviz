@@ -60,6 +60,16 @@ impl ReviewStore {
         }
     }
 
+    /// Removes every reviewed file belonging to `sha`.
+    pub fn remove_commit(&mut self, sha: &str) {
+        let prefix = format!("{sha}\t");
+        let before = self.entries.len();
+        self.entries.retain(|key, _| !key.starts_with(&prefix));
+        if self.entries.len() != before {
+            self.dirty = true;
+        }
+    }
+
     /// The commit SHA of the most recently reviewed file, if any.
     pub fn latest_commit(&self) -> Option<String> {
         self.entries
@@ -133,5 +143,16 @@ mod tests {
     fn latest_commit_is_none_when_empty() {
         let store = ReviewStore::default();
         assert_eq!(store.latest_commit(), None);
+    }
+
+    #[test]
+    fn remove_commit_drops_only_its_files() {
+        let mut store = ReviewStore::default();
+        store.entries.insert("aaa\tf1".to_string(), 1);
+        store.entries.insert("aaa\tf2".to_string(), 2);
+        store.entries.insert("bbb\tf3".to_string(), 3);
+        store.remove_commit("aaa");
+        assert_eq!(store.entries.len(), 1);
+        assert!(store.entries.contains_key("bbb\tf3"));
     }
 }

@@ -53,6 +53,7 @@
 - 批次 13（A 项）：右键菜单可见性（`.gitviz.conf` 的 `hidden_actions`）、⌘⇧↑/⌘⇧↓ 替代分支导航、Gravatar 头像链接（点击打开）；新增 `md5` 依赖。**新增 `visible_actions`/`find_alt_parent_index`/`find_alt_child_index`/`gravatar_url` 单测、config 往返扩展**
 - 批次 14（A 项）：**列宽拖拽**（表头分隔条 + `on_mouse_move`/`on_mouse_up`）、**On Load 滚动到 HEAD**（`find_head_commit_index` 单测）
 - 批次 15（A 项）：**滚动到底自动加载更多**（`UniformListScrollHandle` + `near_bottom` 单测）
+- 批次 16（A 项）：**自定义 emoji 映射**（`.gitviz.conf` 的 `emoji_mappings=code:emoji`，`emoji::replace_with` 先自定义后内置）、**停止当前提交的代码审查**（命令面板 `end-current-review` + `ReviewStore::remove_commit`）。**新增 `replace_with`/`remove_commit` 单测、config 往返扩展**
 
 ## 文件结构
 

@@ -29,6 +29,8 @@ pub struct RepoConfig {
     pub lane_colors: Vec<String>,
     /// Context menu action keys to hide.
     pub hidden_actions: Vec<String>,
+    /// Custom emoji shortcodes as `code:emoji`.
+    pub emoji_mappings: Vec<String>,
 }
 
 impl Default for RepoConfig {
@@ -52,6 +54,7 @@ impl Default for RepoConfig {
             branch_globs: Vec::new(),
             lane_colors: Vec::new(),
             hidden_actions: Vec::new(),
+            emoji_mappings: Vec::new(),
         }
     }
 }
@@ -100,6 +103,9 @@ impl RepoConfig {
                 "hidden_actions" => {
                     config.hidden_actions = split_list(value);
                 }
+                "emoji_mappings" => {
+                    config.emoji_mappings = split_list(value);
+                }
                 _ => {}
             }
         }
@@ -132,6 +138,10 @@ impl RepoConfig {
         output.push_str(&format!(
             "hidden_actions={}\n",
             self.hidden_actions.join(";")
+        ));
+        output.push_str(&format!(
+            "emoji_mappings={}\n",
+            self.emoji_mappings.join(";")
         ));
         std::fs::write(Self::path(repo), output)?;
         Ok(())
@@ -167,6 +177,7 @@ mod tests {
         config.branch_globs = vec!["heads/feature/*".to_string(), "heads/fix/*".to_string()];
         config.lane_colors = vec!["#e06c75".to_string(), "#61afef".to_string()];
         config.hidden_actions = vec!["revert".to_string()];
+        config.emoji_mappings = vec!["shipit:🚢".to_string()];
         config.save(&dir).unwrap();
 
         let loaded = RepoConfig::load(&dir).unwrap();
@@ -176,6 +187,7 @@ mod tests {
         assert_eq!(loaded.branch_globs.len(), 2);
         assert_eq!(loaded.lane_colors, vec!["#e06c75", "#61afef"]);
         assert_eq!(loaded.hidden_actions, vec!["revert"]);
+        assert_eq!(loaded.emoji_mappings, vec!["shipit:🚢"]);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

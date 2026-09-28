@@ -1,6 +1,19 @@
 //! Replaces common `:shortcode:` sequences (including a subset of gitmoji)
 //! with the corresponding emoji, as vscode-git-graph does.
 
+/// Like [`replace_shortcodes`], but applies user-defined `:code:` mappings
+/// first (from `.gitviz.conf`).
+pub fn replace_with(input: &str, custom: &[(String, String)]) -> String {
+    if custom.is_empty() {
+        return replace_shortcodes(input);
+    }
+    let mut text = input.to_string();
+    for (code, emoji) in custom {
+        text = text.replace(&format!(":{code}:"), emoji);
+    }
+    replace_shortcodes(&text)
+}
+
 pub fn replace_shortcodes(input: &str) -> String {
     if !input.contains(':') {
         return input.to_string();
@@ -97,6 +110,14 @@ mod tests {
         assert_eq!(replace_shortcodes(":bug: fix"), "🐛 fix");
         assert_eq!(replace_shortcodes(":sparkles: feat :rocket:"), "✨ feat 🚀");
         assert_eq!(replace_shortcodes(":+1: nice"), "👍 nice");
+    }
+
+    #[test]
+    fn custom_mappings_are_applied_first() {
+        let custom = vec![("shipit".to_string(), "🚢".to_string())];
+        assert_eq!(replace_with(":shipit: go", &custom), "🚢 go");
+        // Built-in mappings still work.
+        assert_eq!(replace_with(":bug: fix", &custom), "🐛 fix");
     }
 
     #[test]
