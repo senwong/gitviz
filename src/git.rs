@@ -215,6 +215,18 @@ pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<
     Ok(commits)
 }
 
+/// Stash references whose history contains `sha`.
+pub fn stashes_containing(repo: &Path, sha: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    for index in 0..stashes(repo).len() {
+        let stash = format!("stash@{{{index}}}");
+        if run(repo, &["merge-base", "--is-ancestor", sha, &stash]).is_ok() {
+            result.push(stash);
+        }
+    }
+    result
+}
+
 /// Local branches whose history contains `sha`.
 pub fn branches_containing(repo: &Path, sha: &str) -> Vec<String> {
     run(

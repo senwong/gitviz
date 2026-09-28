@@ -355,16 +355,18 @@ struct DiffView {
     text: Arc<String>,
 }
 
-/// Branches and tags that include a commit, cached for the hover footer.
+/// Branches, tags and stashes that include a commit, cached for the hover
+/// footer.
 #[derive(Clone, Default)]
 struct Containment {
     branches: Vec<String>,
     tags: Vec<String>,
+    stashes: Vec<String>,
 }
 
 impl Containment {
     fn is_empty(&self) -> bool {
-        self.branches.is_empty() && self.tags.is_empty()
+        self.branches.is_empty() && self.tags.is_empty() && self.stashes.is_empty()
     }
 }
 
@@ -3400,11 +3402,14 @@ impl GraphView {
                     .and_then(|commit| self.containment_cache.get(&commit.sha))
                     .map(|containment| {
                         if containment.is_empty() {
-                            "not in any branch/tag".to_string()
+                            "not in any branch/tag/stash".to_string()
                         } else {
                             let mut parts = containment.branches.clone();
                             parts
                                 .extend(containment.tags.iter().map(|tag| format!("tag:{tag}")));
+                            parts.extend(
+                                containment.stashes.iter().map(|stash| stash.to_string()),
+                            );
                             format!("contained in: {}", parts.join(", "))
                         }
                     });
@@ -3653,6 +3658,7 @@ impl RowRenderContext {
                             let containment = Containment {
                                 branches: git::branches_containing(&repo.path, &sha),
                                 tags: git::tags_containing(&repo.path, &sha),
+                                stashes: git::stashes_containing(&repo.path, &sha),
                             };
                             this.containment_cache.insert(sha, containment);
                         }

@@ -64,6 +64,7 @@
 - 批次 24（A 项）：**动态增删仓库**——命令面板/设置 “Add repository…”（支持 `~/` 展开，`expand_tilde`）与 “Remove current repository”（从视图与 roots 中移除）。**新增 `expand_tilde` 单测与命令清单测试**
 - 批次 25（A 项）：**Stash 详情**——选中 stash 时用 `git stash show --numstat` 列出文件、`git stash diff`（`stash@{n}^1..stash@{n}`）查看单文件 diff；顺带修正 `ChangedFile` 缺少 `status` 的构造（`select_row` 未提交文件、numstat 解析）并补 `status_entry_letter`。**新增 `lists_and_diffs_stash_contents` 集成测试、`status_entry_letter` 单测**
 - 批次 26（A 项）：**相对日期**（“3 days ago”，设置面板 “Relative dates”，`relative_time` 纯函数）。**新增 `relative_time` 分档单测**
+- 批次 27（A 项）：**悬浮包含信息补充 stash**——`git::stashes_containing`（`merge-base --is-ancestor` 遍历 stash），`Containment` 增加 `stashes` 并显示在底部信息条。**新增 `stashes_containing_reports_ancestor_commits` 集成测试**
 
 ## 文件结构
 

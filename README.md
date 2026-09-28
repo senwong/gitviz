@@ -121,7 +121,7 @@ script/build       cargo 包装脚本
   - [x] Stash 详情：文件列表 + 每个文件的 diff（`git stash show`）
 - 悬浮提示
   - [x] 是否属于 HEAD 祖先（颜色 + 底部信息条 “in HEAD / not in HEAD”）
-  - [x] 详情显示包含该提交的分支/标签；悬浮信息条显示 refs / HEAD，并懒加载并缓存 “contained in: 分支/标签”
+  - [x] 详情显示包含该提交的分支/标签；悬浮信息条显示 refs / HEAD，并懒加载并缓存 “contained in: 分支/标签/stash”
 - 分支过滤
   - [x] 过滤面板（点击选择分支，客户端过滤）
   - [x] `Show All` 已做；custom glob patterns（`glob_match` + 设置/命令面板 “Add branch glob…” + `.gitviz.conf`）

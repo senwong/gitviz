@@ -162,6 +162,21 @@ fn lists_and_diffs_stash_contents() {
 }
 
 #[test]
+fn stashes_containing_reports_ancestor_commits() {
+    let repo = TempRepo::new("stashcontains");
+    repo.commit("a.txt", "1\n", "one");
+    let base = git::log(&repo.path, 1, &LogFilter::default()).unwrap()[0]
+        .sha
+        .clone();
+
+    std::fs::write(repo.path.join("a.txt"), "1\n2\n").unwrap();
+    git::stash_push(&repo.path, true).unwrap();
+
+    let contained = git::stashes_containing(&repo.path, &base);
+    assert_eq!(contained, vec!["stash@{0}".to_string()]);
+}
+
+#[test]
 fn commit_detail_reports_changed_files() {
     let repo = TempRepo::new("detail");
     repo.commit("a.txt", "1\n", "one");
