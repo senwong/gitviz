@@ -1801,11 +1801,8 @@ impl GraphView {
         }
     }
 
-    fn export_repo_config(&mut self, cx: &mut Context<Self>) {
-        let Some(repo) = self.active_repo().cloned() else {
-            return;
-        };
-        let config = RepoConfig {
+    fn repo_config(&self) -> RepoConfig {
+        RepoConfig {
             branches: self.filter.branches,
             remotes: self.filter.remotes,
             tags: self.filter.tags,
@@ -1849,7 +1846,16 @@ impl GraphView {
             graph_style: self.graph_style.as_str().to_string(),
             pr_provider: self.custom_pr_provider.clone(),
             issue_provider: self.custom_issue_provider.clone(),
+        }
+    }
+
+    /// Writes the current settings to the active repository's `.gitviz.conf`,
+    /// surfacing any failure in the error banner.
+    fn export_repo_config(&mut self, cx: &mut Context<Self>) {
+        let Some(repo) = self.active_repo().cloned() else {
+            return;
         };
+        let config = self.repo_config();
         match config.save(&repo.path) {
             Ok(()) => {
                 self.error = None;
@@ -1859,6 +1865,14 @@ impl GraphView {
                 self.error = Some(error.to_string());
                 cx.notify();
             }
+        }
+    }
+
+    /// Persists settings after an interactive toggle, silently ignoring
+    /// failures (e.g. a read-only checkout) so no error banner appears.
+    fn persist_repo_config(&mut self) {
+        if let Some(repo) = self.active_repo().cloned() {
+            let _ = self.repo_config().save(&repo.path);
         }
     }
 
@@ -2727,7 +2741,7 @@ impl GraphView {
                 | "width-commit-minus"
                 | "width-commit-plus"
         ) {
-            self.export_repo_config(cx);
+            self.persist_repo_config();
         }
     }
 
