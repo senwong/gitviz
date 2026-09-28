@@ -146,12 +146,13 @@ PROGRESS.md         本文件
   - `git.rs`：`parse_remote`（GitHub/GitLab/Bitbucket、未知 host）、`urlencode`
 - **集成测试**（`tests/git_integration.rs`）：在临时目录 `git init` 真实仓库，跑 log/status/branches/tag/stash/commit_detail/remotes。
 - 为支持集成测试，新增了 `src/lib.rs`（lib target），`main.rs` 改为引用 `gitviz::...`。
-- 运行（编译通过后）：
+- **快速验证（不需要 gpui，很快）**：`./script/pure-test` 会把纯逻辑模块（config/discovery/emoji/git/layout/markdown/review）复制进一个临时 crate 并跑测试。目前 **39 单测 + 23 集成测试全部通过**。
+- 全量（含 UI，需要 gpui）：
   ```sh
   ./script/build test
   ./script/build test --test git_integration
   ```
-- **注意**：这些测试目前也**还没跑过**（代码未编译）。第一次 build 后用它们验证。
+- **UI 部分（view.rs/theme.rs）仍未编译**；第一次 `./script/build check` 后用 `./script/build test` 验证全部。
 
 ## 快速上手（给接棒的自己）
 
