@@ -1627,6 +1627,12 @@ impl GraphView {
         self.author_width = config.author_width;
         self.commit_width = config.commit_width;
         self.color_preset = config.color_preset as usize;
+        self.use_mailmap = config.use_mailmap;
+        self.include_reflogs = config.include_reflogs;
+        self.show_remote_heads = config.remote_heads;
+        self.filter.only_tags = config.only_tags;
+        self.fetch_prune = config.fetch_prune;
+        self.fetch_prune_tags = config.fetch_prune_tags;
         self.repo_order = RepoOrder::from_str(&config.repo_order);
         self.branch_globs = config.branch_globs;
         self.custom_lane_colors = config.lane_colors;
@@ -1819,6 +1825,12 @@ impl GraphView {
             author_width: self.author_width,
             commit_width: self.commit_width,
             color_preset: self.color_preset as u32,
+            use_mailmap: self.use_mailmap,
+            include_reflogs: self.include_reflogs,
+            remote_heads: self.show_remote_heads,
+            only_tags: self.filter.only_tags,
+            fetch_prune: self.fetch_prune,
+            fetch_prune_tags: self.fetch_prune_tags,
             repo_order: self.repo_order.as_str().to_string(),
             branch_globs: self.branch_globs.clone(),
             lane_colors: self.custom_lane_colors.clone(),

@@ -32,6 +32,12 @@ pub struct RepoConfig {
     pub author_width: f32,
     pub commit_width: f32,
     pub color_preset: u32,
+    pub use_mailmap: bool,
+    pub include_reflogs: bool,
+    pub remote_heads: bool,
+    pub only_tags: bool,
+    pub fetch_prune: bool,
+    pub fetch_prune_tags: bool,
     pub repo_order: String,
     /// Branch glob patterns (e.g. `heads/feature/*`); empty means show all.
     pub branch_globs: Vec<String>,
@@ -76,6 +82,12 @@ impl Default for RepoConfig {
             author_width: 130.,
             commit_width: 80.,
             color_preset: 0,
+            use_mailmap: false,
+            include_reflogs: false,
+            remote_heads: false,
+            only_tags: false,
+            fetch_prune: false,
+            fetch_prune_tags: false,
             repo_order: "name".to_string(),
             branch_globs: Vec::new(),
             lane_colors: Vec::new(),
@@ -132,6 +144,12 @@ impl RepoConfig {
                 "author_width" => config.author_width = value.parse().unwrap_or(130.),
                 "commit_width" => config.commit_width = value.parse().unwrap_or(80.),
                 "color_preset" => config.color_preset = value.parse().unwrap_or(0),
+                "use_mailmap" => config.use_mailmap = flag,
+                "include_reflogs" => config.include_reflogs = flag,
+                "remote_heads" => config.remote_heads = flag,
+                "only_tags" => config.only_tags = flag,
+                "fetch_prune" => config.fetch_prune = flag,
+                "fetch_prune_tags" => config.fetch_prune_tags = flag,
                 "repo_order" => config.repo_order = value.to_string(),
                 "branch_globs" => {
                     config.branch_globs = split_list(value);
@@ -177,6 +195,12 @@ impl RepoConfig {
             ("relative_dates", self.relative_dates),
             ("full_refs", self.full_refs),
             ("scroll_to_head", self.scroll_to_head),
+            ("use_mailmap", self.use_mailmap),
+            ("include_reflogs", self.include_reflogs),
+            ("remote_heads", self.remote_heads),
+            ("only_tags", self.only_tags),
+            ("fetch_prune", self.fetch_prune),
+            ("fetch_prune_tags", self.fetch_prune_tags),
         ] {
             output.push_str(&format!("{key}={value}\n"));
         }
@@ -244,6 +268,12 @@ mod tests {
         config.author_width = 140.;
         config.commit_width = 96.;
         config.color_preset = 2;
+        config.use_mailmap = true;
+        config.include_reflogs = true;
+        config.remote_heads = true;
+        config.only_tags = true;
+        config.fetch_prune = true;
+        config.fetch_prune_tags = true;
         config.pr_provider = "https://git.example.com/{owner}/{repo}/compare/{base}...{head}".to_string();
         config.issue_provider = "https://bugs.example.com/{issue}".to_string();
         config.save(&dir).unwrap();
@@ -266,6 +296,12 @@ mod tests {
         assert_eq!(loaded.author_width, 140.);
         assert_eq!(loaded.commit_width, 96.);
         assert_eq!(loaded.color_preset, 2);
+        assert!(loaded.use_mailmap);
+        assert!(loaded.include_reflogs);
+        assert!(loaded.remote_heads);
+        assert!(loaded.only_tags);
+        assert!(loaded.fetch_prune);
+        assert!(loaded.fetch_prune_tags);
         assert_eq!(loaded.graph_style, "angular");
         assert_eq!(
             loaded.pr_provider,
