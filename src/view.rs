@@ -614,7 +614,7 @@ impl GraphView {
             recent: crate::workspace::load_recent(),
             recent_menu: RecentMenu::default(),
             theme_menu: RecentMenu::default(),
-            repo_depth: crate::discovery::DEFAULT_DEPTH,
+            repo_depth: crate::workspace::load_depth(),
             active: 0,
             load_gen: 0,
             loading: false,
@@ -4614,11 +4614,13 @@ impl GraphView {
             "width-commit-plus" => self.commit_width = adjust_width(self.commit_width, 20.),
             "depth-minus" => {
                 self.repo_depth = self.repo_depth.saturating_sub(1);
+                crate::workspace::save_depth(self.repo_depth);
                 self.rediscover(cx);
                 return;
             }
             "depth-plus" => {
                 self.repo_depth += 1;
+                crate::workspace::save_depth(self.repo_depth);
                 self.rediscover(cx);
                 return;
             }

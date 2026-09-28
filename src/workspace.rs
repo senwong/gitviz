@@ -170,6 +170,28 @@ pub fn load_window_geometry() -> Option<(f32, f32, f32, f32)> {
     parse_window_geometry(&std::fs::read_to_string(path).ok()?)
 }
 
+/// Remembers the repository discovery depth.
+pub fn load_depth() -> usize {
+    let Some(path) = settings_path("depth") else {
+        return crate::discovery::DEFAULT_DEPTH;
+    };
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(crate::discovery::DEFAULT_DEPTH)
+}
+
+/// Persists the repository discovery depth.
+pub fn save_depth(depth: usize) {
+    let Some(path) = settings_path("depth") else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, depth.to_string());
+}
+
 /// Remembers the window position and size.
 pub fn save_window_geometry(x: f32, y: f32, width: f32, height: f32) {
     let Some(path) = settings_path("window") else {

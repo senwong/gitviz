@@ -51,7 +51,7 @@ fn main() {
 
     application().run(move |cx: &mut App| {
         let search_roots = roots.clone();
-        let repos = discovery::discover(&roots);
+        let repos = discovery::discover_with_depth(&roots, gitviz::workspace::load_depth());
 
         let bounds = window_bounds(cx);
         cx.open_window(
