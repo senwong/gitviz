@@ -1,0 +1,18 @@
+[package]
+name = "git-graph"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "A standalone, multi-repository git graph viewer built on gpui."
+
+[workspace]
+
+[dependencies]
+gpui = { path = "../zed/crates/gpui", default-features = false, features = [
+    "font-kit",
+    "stacker",
+] }
+gpui_platform = { path = "../zed/crates/gpui_platform", default-features = false, features = [
+    "font-kit",
+] }
+anyhow = "1"

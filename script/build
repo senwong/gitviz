@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+#
+# Thin wrapper around cargo for this project.
+#
+# It uses rustup's toolchain (matching ./rust-toolchain.toml) and disables
+# incremental compilation by default, because gpui plus its dependency tree is
+# large and incremental artifacts can grow to tens of gigabytes.
+#
+# Usage:
+#   ./script/build check
+#   ./script/build run -- ~/projects/a ~/projects/b
+#   ./script/build build --release
+
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+export PATH="$HOME/.cargo/bin:$PATH"
+export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
+
+exec cargo "$@"
