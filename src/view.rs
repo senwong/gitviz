@@ -199,6 +199,12 @@ fn adjust_width(width: f32, delta: f32) -> f32 {
     (width + delta).clamp(48., 480.)
 }
 
+/// Whether navigating to `last_index` in a list of `len` rows is at (or past)
+/// the end, and therefore should trigger loading more commits.
+fn should_load_more(last_index: usize, len: usize) -> bool {
+    len > 0 && last_index + 1 >= len
+}
+
 fn format_refs(refs: &[String], combine: bool, align: RefAlign) -> Vec<String> {
     let mut names = if combine {
         combine_refs(refs)
@@ -821,6 +827,10 @@ impl GraphView {
         };
         if let Some(row) = self.rows.get(next).copied() {
             self.select_row(row, cx);
+            if should_load_more(next, self.rows.len()) && self.loaded < COMMIT_LIMIT {
+                self.loaded = (self.loaded + 500).min(COMMIT_LIMIT);
+                self.load(cx);
+            }
         }
     }
 
@@ -3213,5 +3223,12 @@ mod tests {
         assert_eq!(adjust_width(200., 20.), 220.);
         assert_eq!(adjust_width(40., -20.), 48.);
         assert_eq!(adjust_width(470., 40.), 480.);
+    }
+
+    #[test]
+    fn load_more_near_end() {
+        assert!(should_load_more(4, 5));
+        assert!(!should_load_more(2, 5));
+        assert!(!should_load_more(0, 0));
     }
 }
