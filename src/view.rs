@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use gpui::{
     AnyElement, App, Bounds, ClickEvent, Context, FocusHandle, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, Pixels, Render, Window, div, h_flex, point, prelude::*, px,
-    uniform_list, v_flex,
+    MouseButton, MouseDownEvent, Pixels, Render, UniformListScrollHandle, Window, div, h_flex,
+    point, prelude::*, px, uniform_list, v_flex,
 };
 
 use crate::config::RepoConfig;
@@ -87,6 +87,7 @@ pub struct GraphView {
     date_short: bool,
     resize_drag: Option<ResizeDrag>,
     scroll_to_head_on_load: bool,
+    scroll_handle: UniformListScrollHandle,
     date_width: f32,
     author_width: f32,
     commit_width: f32,
@@ -234,6 +235,10 @@ fn find_child_index(commits: &[Commit], index: usize) -> Option<usize> {
                 .iter()
                 .any(|parent| parent == &sha)
         })
+}
+
+fn near_bottom(offset_y: f32, max_offset_y: f32, threshold: f32) -> bool {
+    max_offset_y > 0.0 && -offset_y >= max_offset_y - threshold
 }
 
 fn find_head_commit_index(commits: &[Commit], branch: Option<&str>) -> Option<usize> {
@@ -491,6 +496,7 @@ impl GraphView {
             date_short: false,
             resize_drag: None,
             scroll_to_head_on_load: false,
+            scroll_handle: UniformListScrollHandle::new(),
             date_width: 150.,
             author_width: 130.,
             commit_width: 80.,
@@ -1415,6 +1421,21 @@ impl Render for GraphView {
                 self.match_cursor = 0;
             }
         }
+        // Automatically load more commits when scrolled near the bottom.
+        if self.loaded < COMMIT_LIMIT && self.commits.len() >= self.loaded {
+            let at_bottom = {
+                let state = self.scroll_handle.0.borrow();
+                near_bottom(
+                    state.base_handle.offset().y.as_f32(),
+                    state.base_handle.max_offset().y.as_f32(),
+                    120.,
+                )
+            };
+            if at_bottom {
+                self.loaded = (self.loaded + 500).min(COMMIT_LIMIT);
+                self.load(cx);
+            }
+        }
         let theme = self.theme.clone();
         let weak = cx.weak_entity();
 
@@ -1521,6 +1542,7 @@ impl Render for GraphView {
                     .map(|position| ctx.render_row(position, weak.clone()))
                     .collect::<Vec<_>>()
             })
+            .track_scroll(&self.scroll_handle)
             .flex_1()
             .into_any_element()
         };
@@ -3764,6 +3786,13 @@ mod tests {
 
         assert_eq!(find_alt_parent_index(&commits, 0), Some(2));
         assert_eq!(find_alt_child_index(&commits, 2), Some(0));
+    }
+
+    #[test]
+    fn near_bottom_detection() {
+        assert!(near_bottom(-500.0, 500.0, 120.0));
+        assert!(!near_bottom(-100.0, 500.0, 120.0));
+        assert!(!near_bottom(0.0, 0.0, 120.0));
     }
 
     #[test]
