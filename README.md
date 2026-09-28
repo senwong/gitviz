@@ -118,8 +118,8 @@ script/build       cargo 包装脚本
   - [x] 显示与选择、查看文件列表
   - [x] Stash 操作（push/apply/pop/drop/branch）+ 未提交变更的 Stash/Discard
 - 悬浮提示
-  - [~] 是否属于 HEAD 祖先（已用颜色区分）
-  - [x] 详情显示包含该提交的分支/标签；悬浮信息条显示 refs / HEAD
+  - [x] 是否属于 HEAD 祖先（颜色 + 底部信息条 “in HEAD / not in HEAD”）
+  - [x] 详情显示包含该提交的分支/标签；悬浮信息条显示 refs / HEAD，并懒加载并缓存 “contained in: 分支/标签”
 - 分支过滤
   - [x] 过滤面板（点击选择分支，客户端过滤）
   - [x] `Show All` 已做；custom glob patterns（`glob_match` + 设置/命令面板 “Add branch glob…” + `.gitviz.conf`）

@@ -96,6 +96,7 @@ pub struct GraphView {
     diff: Option<DiffView>,
     review: ReviewStore,
     hovered: Option<RowKind>,
+    containment_cache: std::collections::HashMap<String, Containment>,
     repo_order: RepoOrder,
     ref_align: RefAlign,
     commands: CommandPalette,
@@ -347,6 +348,19 @@ struct DiffView {
     text: Arc<String>,
 }
 
+/// Branches and tags that include a commit, cached for the hover footer.
+#[derive(Clone, Default)]
+struct Containment {
+    branches: Vec<String>,
+    tags: Vec<String>,
+}
+
+impl Containment {
+    fn is_empty(&self) -> bool {
+        self.branches.is_empty() && self.tags.is_empty()
+    }
+}
+
 #[derive(Clone, Copy)]
 enum MenuAction {
     CherryPick,
@@ -516,6 +530,7 @@ impl GraphView {
             diff: None,
             review: ReviewStore::load(),
             hovered: None,
+            containment_cache: std::collections::HashMap::new(),
             repo_order: RepoOrder::Name,
             ref_align: RefAlign::Left,
             commands: CommandPalette::default(),
@@ -589,6 +604,7 @@ impl GraphView {
         self.signature_details = None;
         self.branches_containing.clear();
         self.tags_containing.clear();
+        self.containment_cache.clear();
         self.matches.clear();
         self.match_cursor = 0;
         self.head_ancestors = git::head_ancestors(&repo.path, 50_000);
@@ -3189,7 +3205,7 @@ impl GraphView {
 
     fn render_footer(&self) -> AnyElement {
         let theme = self.theme.clone();
-        let text = match self.hovered {
+        let base = match self.hovered {
             Some(RowKind::Commit(index)) => self.commits.get(index).map(|commit| {
                 let refs = if commit.refs.is_empty() {
                     "no refs".to_string()
@@ -3213,6 +3229,30 @@ impl GraphView {
             None => None,
         }
         .unwrap_or_else(|| "Hover a commit to see its refs".to_string());
+
+        let text = match self.hovered {
+            Some(RowKind::Commit(index)) => {
+                let containment = self
+                    .commits
+                    .get(index)
+                    .and_then(|commit| self.containment_cache.get(&commit.sha))
+                    .map(|containment| {
+                        if containment.is_empty() {
+                            "not in any branch/tag".to_string()
+                        } else {
+                            let mut parts = containment.branches.clone();
+                            parts
+                                .extend(containment.tags.iter().map(|tag| format!("tag:{tag}")));
+                            format!("contained in: {}", parts.join(", "))
+                        }
+                    });
+                match containment {
+                    Some(extra) => format!("{base}   ·   {extra}"),
+                    None => base,
+                }
+            }
+            _ => base,
+        };
 
         let text = if !self.search_query.is_empty() && !self.matches.is_empty() {
             format!(
@@ -3433,6 +3473,17 @@ impl RowRenderContext {
                         if current != target {
                             this.hovered = target.map(RowKind::Commit);
                             cx.notify();
+                        }
+                        if let Some(index) = target
+                            && let Some(sha) = this.commits.get(index).map(|commit| commit.sha.clone())
+                            && !this.containment_cache.contains_key(&sha)
+                            && let Some(repo) = this.active_repo().cloned()
+                        {
+                            let containment = Containment {
+                                branches: git::branches_containing(&repo.path, &sha),
+                                tags: git::tags_containing(&repo.path, &sha),
+                            };
+                            this.containment_cache.insert(sha, containment);
                         }
                     })
                     .ok();
@@ -4016,5 +4067,15 @@ mod tests {
                 .any(|(_, id)| *id == "end-current-review")
         );
         assert!(COMMANDS.iter().any(|(_, id)| *id == "add-glob"));
+        assert!(COMMANDS.iter().any(|(_, id)| *id == "fetch-into"));
+    }
+
+    #[test]
+    fn containment_reports_empty() {
+        let empty = Containment::default();
+        assert!(empty.is_empty());
+        let mut filled = Containment::default();
+        filled.branches.push("main".to_string());
+        assert!(!filled.is_empty());
     }
 }
