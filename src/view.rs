@@ -1285,14 +1285,6 @@ impl GraphView {
             return;
         }
 
-        if keystroke.key == "escape" {
-            self.menu = None;
-            self.settings_open = false;
-            self.diff = None;
-            cx.notify();
-            return;
-        }
-
         if self.search_active {
             match keystroke.key.as_str() {
                 "escape" | "enter" => self.search_active = false,
@@ -1309,6 +1301,22 @@ impl GraphView {
                     }
                 }
             }
+            cx.notify();
+            return;
+        }
+
+        if keystroke.key == "escape" {
+            self.menu = None;
+            self.settings_open = false;
+            self.diff = None;
+            // Close the commit details / comparison view.
+            self.selected = None;
+            self.detail = None;
+            self.detail_sha = None;
+            self.detail_stash = None;
+            self.compare = None;
+            self.compare_worktree = false;
+            self.compare_files.clear();
             cx.notify();
             return;
         }
