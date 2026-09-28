@@ -100,6 +100,7 @@
 - 验证（最新）：全量 **75 单测 + 23 集成 = 98 项全部通过**。
 - 性能与体验续：`commits/head_ancestors/status/stashes` 改为 `Arc` 共享（**消除每帧深拷贝**）；搜索匹配只在变更时重算（`search_dirty`）；车道数缓存（`lane_count`）；`load_detail` 也走后台线程；选中行自动滚动进视野。
 - 其它：新增 CLI `--head`（打开即选中 HEAD 并显示详情）；`find_head_commit_index` 支持 `HEAD -> branch`；默认窗口 1320×860 + 最小尺寸 900×560；详情面板宽 400；Esc 关闭详情/对比视图；空状态（No matching commits / No commits / Loading…）；弹层按键提示。
+- 细节续：Diff 覆盖层用 git 惯例配色（新增绿/删除红/hunk 蓝）并支持长行横向滚动；状态字母 `A`=绿；设置/分支/文件选择改为**开关/复选框**样式；面板分组标题；底栏回退显示选中项；stash 导航滚动进视野；最近打开列表显示“仓库名 + 灰色父路径”；新增 `⌘O/⇧⌘O/⌘B/⌘,` 快捷键。
 
 ## 文件结构
 
