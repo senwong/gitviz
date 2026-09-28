@@ -1379,6 +1379,7 @@ impl GraphView {
         };
         let next = (current + delta).clamp(0, self.stashes.len() as i32 - 1) as usize;
         self.selected = Some(RowKind::Stash(next));
+        self.pending_scroll = Some(RowKind::Stash(next));
     }
 
     fn scroll_to_head(&mut self) {
@@ -4528,7 +4529,9 @@ impl GraphView {
 
     fn render_footer(&self) -> AnyElement {
         let theme = self.theme.clone();
-        let base = match self.hovered {
+        // Prefer the hovered row, falling back to the selected one.
+        let current = self.hovered.or(self.selected);
+        let base = match current {
             Some(RowKind::Commit(index)) => self.commits.get(index).map(|commit| {
                 let refs = if commit.refs.is_empty() {
                     "no refs".to_string()
@@ -4551,9 +4554,9 @@ impl GraphView {
             }
             None => None,
         }
-        .unwrap_or_else(|| "Hover a commit to see its refs".to_string());
+        .unwrap_or_else(|| "Select a commit to see its refs".to_string());
 
-        let text = match self.hovered {
+        let text = match current {
             Some(RowKind::Commit(index)) => {
                 let containment = self
                     .commits
