@@ -70,6 +70,16 @@ struct LoadResult {
     commits: Result<Vec<Commit>, String>,
 }
 
+/// The result of the background git work for one selected commit.
+struct DetailResult {
+    detail: Option<CommitDetail>,
+    compare_files: Vec<ChangedFile>,
+    signature: Option<char>,
+    signature_details: Option<String>,
+    branches_containing: Vec<String>,
+    tags_containing: Vec<String>,
+}
+
 pub struct GraphView {
     repos: Vec<Repo>,
     roots: Vec<std::path::PathBuf>,
@@ -82,6 +92,8 @@ pub struct GraphView {
     /// Incremented on every `load`, so stale background results are ignored.
     load_gen: u64,
     loading: bool,
+    detail_gen: u64,
+    detail_loading: bool,
     caret_on: bool,
     branch: Option<String>,
     commits: Vec<Commit>,
@@ -552,6 +564,8 @@ impl GraphView {
             active: 0,
             load_gen: 0,
             loading: false,
+            detail_gen: 0,
+            detail_loading: false,
             caret_on: true,
             branch: None,
             commits: Vec::new(),
@@ -871,37 +885,70 @@ impl GraphView {
         self.detail = None;
         self.detail_sha = None;
         self.detail_stash = None;
+        self.detail_loading = false;
         self.compare_files.clear();
         let Some(commit) = self.commits.get(commit_index) else {
             return;
         };
         let sha = commit.sha.clone();
         self.detail_sha = Some(sha.clone());
-        if let Some(repo) = self.active_repo().cloned() {
-            self.detail = git::commit_detail(&repo.path, &sha).ok();
-            if let Some(compare) = self.compare.and_then(|index| self.commits.get(index)) {
-                let compare_sha = compare.sha.clone();
-                self.compare_files = if self.compare_worktree {
-                    git::working_tree_files(&repo.path, &sha)
-                } else {
-                    git::compare_files(&repo.path, &compare_sha, &sha)
-                };
-            }
-            self.signature = git::signature_status(&repo.path, &sha);
-            self.signature_details = git::signature_details(&repo.path, &sha);
-            self.branches_containing = git::branches_containing(&repo.path, &sha);
-            self.tags_containing = git::tags_containing(&repo.path, &sha);
-            // Cache containment so hovering this commit does not shell out.
-            self.containment_cache.insert(
-                sha.clone(),
-                Containment {
-                    branches: self.branches_containing.clone(),
-                    tags: self.tags_containing.clone(),
-                    stashes: git::stashes_containing(&repo.path, &sha),
-                },
-            );
-        }
+        let compare = self
+            .compare
+            .and_then(|index| self.commits.get(index))
+            .map(|commit| commit.sha.clone());
+        let compare_worktree = self.compare_worktree;
+        let Some(repo) = self.active_repo().cloned() else {
+            cx.notify();
+            return;
+        };
+
+        self.detail_gen += 1;
+        let generation = self.detail_gen;
+        self.detail_loading = true;
         cx.notify();
+
+        let task = cx.background_spawn(async move {
+            let detail = git::commit_detail(&repo.path, &sha).ok();
+            let compare_files = match &compare {
+                Some(from) if compare_worktree => git::working_tree_files(&repo.path, &sha),
+                Some(from) => git::compare_files(&repo.path, from, &sha),
+                None => Vec::new(),
+            };
+            DetailResult {
+                detail,
+                compare_files,
+                signature: git::signature_status(&repo.path, &sha),
+                signature_details: git::signature_details(&repo.path, &sha),
+                branches_containing: git::branches_containing(&repo.path, &sha),
+                tags_containing: git::tags_containing(&repo.path, &sha),
+            }
+        });
+
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            this.update(cx, |this, cx| {
+                if this.detail_gen != generation {
+                    return;
+                }
+                this.detail_loading = false;
+                this.detail = result.detail;
+                this.compare_files = result.compare_files;
+                this.signature = result.signature;
+                this.signature_details = result.signature_details;
+                this.branches_containing = result.branches_containing;
+                this.tags_containing = result.tags_containing;
+                if let Some(sha) = this.detail_sha.clone() {
+                    this.containment_cache.entry(sha).or_insert_with(|| Containment {
+                        branches: this.branches_containing.clone(),
+                        tags: this.tags_containing.clone(),
+                        stashes: Vec::new(),
+                    });
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     fn select_row(&mut self, row: RowKind, cx: &mut Context<Self>) {
@@ -1903,6 +1950,10 @@ impl Render for GraphView {
             if self.match_cursor >= self.matches.len() {
                 self.match_cursor = 0;
             }
+        } else if !self.matches.is_empty() {
+            // Clearing the query clears any stale match highlights.
+            self.matches.clear();
+            self.match_cursor = 0;
         }
         // Automatically load more commits when scrolled near the bottom.
         if self.loaded < COMMIT_LIMIT && self.commits.len() >= self.loaded {
@@ -2054,6 +2105,30 @@ impl Render for GraphView {
         let commands = self.commands.open.then(|| self.render_commands(weak.clone()));
         let prompt = self.prompt.is_some().then(|| self.render_prompt());
         let menu = self.menu.is_some().then(|| self.render_menu(weak.clone()));
+        // A full-window backdrop behind the context menu: clicking anywhere
+        // outside the menu dismisses it.
+        let menu_backdrop = self.menu.is_some().then(|| {
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full()
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, _: &MouseDownEvent, _window, cx| {
+                        this.menu = None;
+                        cx.notify();
+                    }),
+                )
+                .on_mouse_down(
+                    MouseButton::Right,
+                    cx.listener(|this, _: &MouseDownEvent, _window, cx| {
+                        this.menu = None;
+                        cx.notify();
+                    }),
+                )
+                .into_any_element()
+        });
         let branch_filter = self.branch_filter.open.then(|| self.render_branch_filter(weak.clone()));
         let settings = self.settings_open.then(|| self.render_settings(weak.clone()));
         let diff = self.diff.as_ref().map(|view| self.render_diff(view));
@@ -2149,6 +2224,7 @@ impl Render for GraphView {
             .when_some(branch_filter, |this, filter| this.child(filter))
             .when_some(settings, |this, settings| this.child(settings))
             .when_some(prompt, |this, prompt| this.child(prompt))
+            .when_some(menu_backdrop, |this, backdrop| this.child(backdrop))
             .when_some(menu, |this, menu| this.child(menu))
     }
 }
@@ -4464,6 +4540,9 @@ impl RowRenderContext {
         let weak_click = weak.clone();
         let weak_right = weak;
         let theme = theme.clone();
+        let lane_area = (self.commits.iter().map(|c| c.lane).max().unwrap_or(0) + 1) as f32
+            * LANE_WIDTH
+            + 8.;
         h_flex()
             .id(format!("synthetic-{}", primary))
             .h(px(ROW_HEIGHT))
@@ -4484,11 +4563,23 @@ impl RowRenderContext {
             })
             .child(
                 div()
-                    .w(px(LAYER_PREFIX))
-                    .flex()
-                    .justify_center()
-                    .text_color(theme.text_muted)
-                    .child("○"),
+                    .relative()
+                    .flex_none()
+                    .w(px(lane_area))
+                    .h(px(ROW_HEIGHT))
+                    .child(
+                        // A hollow ring, aligned with lane 0 like commit dots.
+                        div()
+                            .absolute()
+                            .left(px((LANE_WIDTH - DOT_SIZE) / 2.0))
+                            .top(px((ROW_HEIGHT - DOT_SIZE) / 2.0))
+                            .w(px(DOT_SIZE))
+                            .h(px(DOT_SIZE))
+                            .rounded_full()
+                            .border_2()
+                            .border_color(theme.text_muted)
+                            .bg(theme.bg),
+                    ),
             )
             .child(div().text_color(theme.text).child(primary.to_string()))
             .child(div().flex_1())
@@ -4650,7 +4741,6 @@ impl RowRenderContext {
     }
 }
 
-const LAYER_PREFIX: f32 = 24.0;
 
 fn parse_hex_color(value: &str) -> Option<gpui::Rgba> {
     let hex = value.trim().trim_start_matches('#');
