@@ -1352,7 +1352,26 @@ impl GraphView {
         match keystroke.key.as_str() {
             "up" => self.move_selection(-1, cx),
             "down" => self.move_selection(1, cx),
+            "pageup" => self.move_selection(-15, cx),
+            "pagedown" => self.move_selection(15, cx),
+            "home" => self.select_edge(true, cx),
+            "end" => self.select_edge(false, cx),
             _ => {}
+        }
+    }
+
+    /// Selects the first (`first = true`) or last row.
+    fn select_edge(&mut self, first: bool, cx: &mut Context<Self>) {
+        if self.rows_dirty {
+            self.rebuild_rows();
+        }
+        let row = if first {
+            self.rows.first().copied()
+        } else {
+            self.rows.last().copied()
+        };
+        if let Some(row) = row {
+            self.select_row(row, cx);
         }
     }
 
