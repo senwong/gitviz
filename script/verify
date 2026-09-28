@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+#
+# Fail-fast verification: type-check every target, then run the full test
+# suite. Exits non-zero on the first failure so it can safely be used in a
+# `./script/verify && ./script/package && git commit` chain.
+#
+# Usage:
+#   ./script/verify
+
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+./script/build check --all-targets
+./script/build test
+
+echo "verify: ok"
