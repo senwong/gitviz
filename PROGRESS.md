@@ -89,6 +89,15 @@
 - 批次 37（A 项）：**性能**——`load()` 改为 `cx.background_spawn` 后台执行 git（`git status`/`head_ancestors`/`tags` 等在 cms-wp 上实测合计 ~4s，之前会冻结 UI）；ahead/behind 从「每次 load 计算所有分支」改为**打开分支面板时惰性计算**（`ensure_branch_tracking`）；hover 不再触发 git（containment 改由选中提交时填充缓存）；加载中显示 “Loading…”；用 `load_gen` 丢弃过期结果。**新增主题/占位单测**
 - 批次 38（A 项）：**主题系统**——`theme.rs` 移植 10 个常见主题（5 深：Dark+、One Dark Pro、Dracula、Nord、Solarized Dark；5 浅：GitHub Light、One Light、Solarized Light、Quiet Light、Gruvbox Light）；修复 `overlay` 用错 `rgb()`（8 位被当成不透明蓝色）改用 `rgba()`；`⌘T` 循环、命令面板/菜单 “Select Theme…” 选择、选择持久化到 `~/.config/gitviz/theme`。**新增 `Theme::all`/`by_name`/`toggled` 单测**
 - 验证：全量 **73 单测 + 23 集成 = 96 项全部通过**；release DMG 已重新打包。
+- UI/UX 迭代（多轮，均已截图核对）：
+  - 引用标签改为**彩色 pill**（HEAD 实心蓝 / 本地分支蓝 / 远程灰 / tag 绿），**过多时换行显示**（列表从 `uniform_list` 换成变高 `list`；行用 `items_stretch`、graph 单元 `self_stretch` + canvas `size_full`，保证变高行里车道线连续）
+  - 表头去冗余（移除 Push/PR/Load more/Theme chip，保留命令面板入口 + 分隔线）；仓库名加粗；加载中显示 “loading…”
+  - 日期紧凑（`YYYY-MM-DD HH:MM`）；行高 24、车道宽 16、节点 9
+  - 右键菜单：全窗口遮罩可点击关闭 + 圆角内边距项；命令/仓库/主题/最近/输入框底部加**按键提示**
+  - graph 连线 2px + **圆头/圆角**（直接依赖同版本 `lyon` 设置 `StrokeOptions` 的 `LineCap::Round`）
+  - 详情面板：顶部“短 SHA + 主题”头部，正文只渲染 body（不重复 subject），contained-in 用 pill，文件区加分隔
+  - 性能：`load()`/`load_detail()` 都改为**后台线程**（`background_spawn` + 代际号丢弃过期结果）；ahead/behind 惰性；hover 不再触发 git；选中的行会**自动滚动进视野**
+- 验证（最新）：全量 **75 单测 + 23 集成 = 98 项全部通过**。
 
 ## 文件结构
 
