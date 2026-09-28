@@ -154,7 +154,34 @@ pub fn parse_window_size(text: &str) -> Option<(f32, f32)> {
     (width >= 400.0 && height >= 300.0).then_some((width, height))
 }
 
-/// The window size used last time, if any.
+/// Parses a `"<x> <y> <width> <height>"` window-geometry string.
+pub fn parse_window_geometry(text: &str) -> Option<(f32, f32, f32, f32)> {
+    let mut parts = text.split_whitespace();
+    let x: f32 = parts.next()?.parse().ok()?;
+    let y: f32 = parts.next()?.parse().ok()?;
+    let width: f32 = parts.next()?.parse().ok()?;
+    let height: f32 = parts.next()?.parse().ok()?;
+    (width >= 400.0 && height >= 300.0).then_some((x, y, width, height))
+}
+
+/// The window geometry used last time, if any.
+pub fn load_window_geometry() -> Option<(f32, f32, f32, f32)> {
+    let path = settings_path("window")?;
+    parse_window_geometry(&std::fs::read_to_string(path).ok()?)
+}
+
+/// Remembers the window position and size.
+pub fn save_window_geometry(x: f32, y: f32, width: f32, height: f32) {
+    let Some(path) = settings_path("window") else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, format!("{x} {y} {width} {height}"));
+}
+
+/// The window size used last time, if any (legacy: size-only file).
 pub fn load_window_size() -> Option<(f32, f32)> {
     let path = settings_path("window")?;
     parse_window_size(&std::fs::read_to_string(path).ok()?)
@@ -211,6 +238,16 @@ mod tests {
         assert_eq!(parse_window_size("300 200"), None);
         assert_eq!(parse_window_size("garbage"), None);
         assert_eq!(parse_window_size(""), None);
+    }
+
+    #[test]
+    fn parses_window_geometry() {
+        assert_eq!(
+            parse_window_geometry("35 33 1320 875"),
+            Some((35., 33., 1320., 875.))
+        );
+        assert_eq!(parse_window_geometry("10 10 300 200"), None);
+        assert_eq!(parse_window_geometry("10 10"), None);
     }
 
     #[test]

@@ -16,7 +16,7 @@ use gitviz::actions::{
 };
 use gitviz::{discovery, view};
 use gpui::{
-    App, AppContext as _, Bounds, Menu, MenuItem, WindowBounds, WindowOptions, px, size,
+    App, AppContext as _, Bounds, Menu, MenuItem, WindowBounds, WindowOptions, point, px, size,
 };
 use gpui_platform::application;
 
@@ -44,8 +44,7 @@ fn main() {
         let search_roots = roots.clone();
         let repos = discovery::discover(&roots);
 
-        let (width, height) = gitviz::workspace::load_window_size().unwrap_or((1320., 860.));
-        let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
+        let bounds = window_bounds(cx);
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -61,6 +60,29 @@ fn main() {
         cx.set_menus(app_menus());
         cx.activate(true);
     });
+}
+
+/// The initial window bounds: restore the last geometry (clamped so it stays
+/// on the display), else a centered default window.
+fn window_bounds(cx: &App) -> Bounds<gpui::Pixels> {
+    const DEFAULT: (f32, f32) = (1320., 860.);
+    let Some((x, y, width, height)) = gitviz::workspace::load_window_geometry() else {
+        return Bounds::centered(None, size(px(DEFAULT.0), px(DEFAULT.1)), cx);
+    };
+    let Some(visible) = cx.primary_display().map(|display| display.visible_bounds()) else {
+        return Bounds::centered(None, size(px(width), px(height)), cx);
+    };
+    let vx = visible.origin.x.as_f32();
+    let vy = visible.origin.y.as_f32();
+    let vw = visible.size.width.as_f32();
+    let vh = visible.size.height.as_f32();
+    // Keep at least ~120px of the window on screen.
+    let ox = x.clamp(vx - width + 120., vx + vw - 120.);
+    let oy = y.clamp(vy, vy + vh - 60.);
+    Bounds {
+        origin: point(px(ox), px(oy)),
+        size: size(px(width), px(height)),
+    }
 }
 
 fn app_menus() -> Vec<Menu> {

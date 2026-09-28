@@ -563,8 +563,13 @@ impl GraphView {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle, cx);
         window.on_window_should_close(cx, |window, _cx| {
-            let size = window.bounds().size;
-            crate::workspace::save_window_size(size.width.as_f32(), size.height.as_f32());
+            let bounds = window.bounds();
+            crate::workspace::save_window_geometry(
+                bounds.origin.x.as_f32(),
+                bounds.origin.y.as_f32(),
+                bounds.size.width.as_f32(),
+                bounds.size.height.as_f32(),
+            );
             true
         });
 
