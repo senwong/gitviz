@@ -246,6 +246,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Save workspace…", "save-workspace"),
     ("Open recent…", "open-recent"),
     ("Select theme…", "select-theme"),
+    ("Compare with parent", "compare-parent"),
 ];
 
 fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
@@ -2679,6 +2680,21 @@ impl GraphView {
                     selected: 0,
                 };
                 cx.notify();
+            }
+            "compare-parent" => {
+                if let Some(index) = self.selected_commit_index()
+                    && let Some(parent_sha) = self
+                        .commits
+                        .get(index)
+                        .and_then(|commit| commit.parents.first())
+                        .cloned()
+                    && let Some(parent_index) =
+                        self.commits.iter().position(|commit| commit.sha == parent_sha)
+                {
+                    self.compare = Some(parent_index);
+                    self.compare_worktree = false;
+                    self.select_row(RowKind::Commit(index), cx);
+                }
             }
             _ => {}
         }
