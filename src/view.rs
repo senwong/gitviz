@@ -2400,10 +2400,14 @@ impl GraphView {
                 let name_rn = name.clone();
                 let name_del = name.clone();
                 let name_copy = name.clone();
+                let name_merge = name.clone();
+                let name_rebase = name.clone();
                 let weak_toggle = weak.clone();
                 let weak_co = weak.clone();
                 let weak_rn = weak.clone();
                 let weak_del = weak.clone();
+                let weak_merge = weak.clone();
+                let weak_rebase = weak.clone();
                 let theme_row = theme.clone();
                 h_flex()
                     .id(format!("branch-{}", name))
@@ -2486,6 +2490,38 @@ impl GraphView {
                                 .update(cx, |this, cx| {
                                     this.run_op(
                                         move |repo| git::delete_branch(&repo.path, &name, false),
+                                        cx,
+                                    )
+                                })
+                                .ok();
+                        },
+                    ))
+                    .child(action_button(
+                        format!("branch-merge-{}", name),
+                        "Merge",
+                        &theme_row,
+                        move |cx| {
+                            let name = name_merge.clone();
+                            weak_merge
+                                .update(cx, |this, cx| {
+                                    this.run_op(
+                                        move |repo| git::merge(&repo.path, &name),
+                                        cx,
+                                    )
+                                })
+                                .ok();
+                        },
+                    ))
+                    .child(action_button(
+                        format!("branch-rebase-{}", name),
+                        "Rebase",
+                        &theme_row,
+                        move |cx| {
+                            let name = name_rebase.clone();
+                            weak_rebase
+                                .update(cx, |this, cx| {
+                                    this.run_op(
+                                        move |repo| git::rebase(&repo.path, &name),
                                         cx,
                                     )
                                 })

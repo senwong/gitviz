@@ -58,6 +58,7 @@
 - 批次 18（A 项）：**remote URL 编辑**（`git remote set-url`，设置面板 “Edit URL” → 提示框预填当前 URL）与 **Fetch into Local Branch**（`git fetch <remote> <rb>:<lb>`，命令面板/设置 “Fetch into local branch…”）。**新增 `fetch_into_args` 单测、`set_remote_url`/`fetch_into_branch` 集成测试**
 - 批次 19（A 项）：**代码审查的加粗/去粗**（未看文件加粗，打开 diff / Open / Rev 后 `ReviewStore::mark` 自动标记并去粗，`has_commit` 判定审查是否进行中）；**复制 ref 名**（stash 菜单 “Copy Stash Reference”、分支面板 “Copy”）。**新增 `ReviewStore::mark`/`has_commit` 单测**
 - 批次 20（A 项）：**悬浮包含信息**——hover 提交时懒计算并缓存 `git branch --contains` / `git tag --contains`（`Containment`），底部信息条追加 “contained in: …”；切换/刷新仓库时清缓存
+- 批次 21（A 项）：**分支面板新增 Merge / Rebase**（`git merge <branch>` / `git rebase <branch>`，沿用已有 git 实现）。**新增 `pulls_from_a_remote` 集成测试**（覆盖此前未测的 `git::pull`）
 
 ## 文件结构
 

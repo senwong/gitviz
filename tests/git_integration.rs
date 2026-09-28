@@ -328,3 +328,44 @@ fn fetches_a_remote_branch_into_a_local_branch() {
 
     let _ = std::fs::remove_dir_all(&bare);
 }
+
+#[test]
+fn pulls_from_a_remote() {
+    let origin = TempRepo::new("pull-src");
+    origin.commit("a.txt", "1\n", "one");
+
+    let bare = std::env::temp_dir().join(format!(
+        "gitviz-it-pull-bare-{}-{}",
+        std::process::id(),
+        nanos()
+    ));
+    let _ = std::fs::remove_dir_all(&bare);
+    let output = Command::new("git")
+        .args(["clone", "--bare", "-q"])
+        .arg(&origin.path)
+        .arg(&bare)
+        .output()
+        .expect("failed to clone --bare");
+    assert!(output.status.success());
+
+    let local = TempRepo::new("pull-dst");
+    git::add_remote(&local.path, "origin", bare.to_str().unwrap()).unwrap();
+    git_run(&local.path, &["fetch", "origin"]);
+    git_run(
+        &local.path,
+        &["branch", "--set-upstream-to=origin/main", "main"],
+    );
+
+    origin.commit("b.txt", "2\n", "two");
+    git_run(&origin.path, &["push", "-q", bare.to_str().unwrap(), "main"]);
+
+    git::pull(&local.path).unwrap();
+    let subjects: Vec<String> = git::log(&local.path, 10, &LogFilter::default())
+        .unwrap()
+        .into_iter()
+        .map(|commit| commit.subject)
+        .collect();
+    assert!(subjects.iter().any(|subject| subject == "two"));
+
+    let _ = std::fs::remove_dir_all(&bare);
+}
