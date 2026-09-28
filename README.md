@@ -136,7 +136,7 @@ script/build       cargo 包装脚本
   - [x] Cmd+F / Cmd+R / Cmd+S(shift) / Cmd+H / Up/Down / Enter / Esc
   - [~] ⌘↑/⌘↓ 同分支父子跳转已做；Shift 变体（沿替代分支）待做
 - 列与外观
-  - [x] Date / Author / Commit 列显示开关（设置面板）
+  - [x] Date / Author / Commit 列显示开关（设置面板）；短日期 / 相对日期（“3 days ago”）
   - [x] 深浅主题切换
   - [x] 列宽 +/-（含拖拽）、车道配色预设（自定义颜色 + rounded/angular graph style）；reference label 对齐/合并已做
 - 消息渲染

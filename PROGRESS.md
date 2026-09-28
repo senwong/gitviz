@@ -63,6 +63,7 @@
 - 批次 23（A 项）：**工作区与提交对比**——选中 Uncommitted 后 Cmd/Ctrl 点击提交进入该提交↔工作区对比（`git diff <sha>` / `git diff <sha> -- <path>`）；顺带修复 compare 模式下 `detail` 为空导致对比面板不渲染的问题（现在始终加载 detail 并额外填充 compare_files）。**新增 `diffs_working_tree_against_a_commit` 集成测试**
 - 批次 24（A 项）：**动态增删仓库**——命令面板/设置 “Add repository…”（支持 `~/` 展开，`expand_tilde`）与 “Remove current repository”（从视图与 roots 中移除）。**新增 `expand_tilde` 单测与命令清单测试**
 - 批次 25（A 项）：**Stash 详情**——选中 stash 时用 `git stash show --numstat` 列出文件、`git stash diff`（`stash@{n}^1..stash@{n}`）查看单文件 diff；顺带修正 `ChangedFile` 缺少 `status` 的构造（`select_row` 未提交文件、numstat 解析）并补 `status_entry_letter`。**新增 `lists_and_diffs_stash_contents` 集成测试、`status_entry_letter` 单测**
+- 批次 26（A 项）：**相对日期**（“3 days ago”，设置面板 “Relative dates”，`relative_time` 纯函数）。**新增 `relative_time` 分档单测**
 
 ## 文件结构
 

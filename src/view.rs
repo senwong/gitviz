@@ -89,6 +89,7 @@ pub struct GraphView {
     custom_emoji: Vec<(String, String)>,
     graph_style: layout::GraphStyle,
     date_short: bool,
+    relative_dates: bool,
     resize_drag: Option<ResizeDrag>,
     scroll_to_head_on_load: bool,
     scroll_handle: UniformListScrollHandle,
@@ -532,6 +533,7 @@ impl GraphView {
             custom_emoji: Vec::new(),
             graph_style: layout::GraphStyle::default(),
             date_short: false,
+            relative_dates: false,
             resize_drag: None,
             scroll_to_head_on_load: false,
             scroll_handle: UniformListScrollHandle::new(),
@@ -1684,6 +1686,7 @@ impl Render for GraphView {
             matches: Arc::new(self.matches.clone()),
             match_cursor: self.match_cursor,
             date_short: self.date_short,
+            relative_dates: self.relative_dates,
             custom_emoji: Arc::new(self.custom_emoji.clone()),
             graph_style: self.graph_style,
         };
@@ -2657,6 +2660,7 @@ impl GraphView {
             ("Respect .mailmap", self.use_mailmap, "mailmap"),
             ("Include reflog commits", self.include_reflogs, "reflogs"),
             ("Short date format", self.date_short, "date-short"),
+            ("Relative dates", self.relative_dates, "relative-dates"),
             ("Scroll to HEAD on load", self.scroll_to_head_on_load, "load-scroll-head"),
             ("Show remote HEAD refs", self.show_remote_heads, "remote-heads"),
             ("Only tag commits", self.filter.only_tags, "only-tags"),
@@ -3062,6 +3066,7 @@ impl GraphView {
             "fetch-prune" => self.fetch_prune = !self.fetch_prune,
             "fetch-prune-tags" => self.fetch_prune_tags = !self.fetch_prune_tags,
             "date-short" => self.date_short = !self.date_short,
+            "relative-dates" => self.relative_dates = !self.relative_dates,
             "load-scroll-head" => self.scroll_to_head_on_load = !self.scroll_to_head_on_load,
             "clear-globs" => self.branch_globs.clear(),
             "add-glob" => {
@@ -3458,6 +3463,7 @@ struct RowRenderContext {
     matches: Arc<Vec<usize>>,
     match_cursor: usize,
     date_short: bool,
+    relative_dates: bool,
     custom_emoji: Arc<Vec<(String, String)>>,
     graph_style: layout::GraphStyle,
 }
@@ -3604,11 +3610,19 @@ impl RowRenderContext {
         } else {
             commit.subject.clone()
         };
-        let date = match self.date_mode {
-            DateMode::Author => commit.author_date.clone(),
-            DateMode::Commit => commit.commit_date.clone(),
+        let date = if self.relative_dates {
+            let timestamp = match self.date_mode {
+                DateMode::Author => commit.timestamp,
+                DateMode::Commit => commit.commit_timestamp,
+            };
+            relative_time(timestamp, now_secs())
+        } else {
+            let date = match self.date_mode {
+                DateMode::Author => commit.author_date.clone(),
+                DateMode::Commit => commit.commit_date.clone(),
+            };
+            format_date(&date, self.date_short)
         };
-        let date = format_date(&date, self.date_short);
 
         h_flex()
             .id(("commit", index))
@@ -3762,6 +3776,41 @@ fn format_date(iso: &str, short: bool) -> String {
         iso.chars().take(10).collect()
     } else {
         iso.to_string()
+    }
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn plural(count: i64) -> &'static str {
+    if count == 1 { "" } else { "s" }
+}
+
+/// Human-readable relative time, e.g. `3 days ago`.
+fn relative_time(past: i64, now: i64) -> String {
+    const MINUTE: i64 = 60;
+    const HOUR: i64 = 60 * MINUTE;
+    const DAY: i64 = 24 * HOUR;
+    const WEEK: i64 = 7 * DAY;
+    const MONTH: i64 = 30 * DAY;
+    const YEAR: i64 = 365 * DAY;
+
+    let delta = now.saturating_sub(past);
+    if delta < 0 {
+        return "in the future".to_string();
+    }
+    match delta {
+        d if d < MINUTE => "just now".to_string(),
+        d if d < HOUR => format!("{} minute{} ago", d / MINUTE, plural(d / MINUTE)),
+        d if d < DAY => format!("{} hour{} ago", d / HOUR, plural(d / HOUR)),
+        d if d < WEEK => format!("{} day{} ago", d / DAY, plural(d / DAY)),
+        d if d < MONTH => format!("{} week{} ago", d / WEEK, plural(d / WEEK)),
+        d if d < YEAR => format!("{} month{} ago", d / MONTH, plural(d / MONTH)),
+        d => format!("{} year{} ago", d / YEAR, plural(d / YEAR)),
     }
 }
 
@@ -4148,6 +4197,20 @@ mod tests {
             format_date("2024-05-01 10:00:00 +0000", false),
             "2024-05-01 10:00:00 +0000"
         );
+    }
+
+    #[test]
+    fn relative_time_formats_each_bucket() {
+        let now = 10_000_000_000_i64;
+        assert_eq!(relative_time(now - 10, now), "just now");
+        assert_eq!(relative_time(now - 60, now), "1 minute ago");
+        assert_eq!(relative_time(now - 120, now), "2 minutes ago");
+        assert_eq!(relative_time(now - 3 * 3600, now), "3 hours ago");
+        assert_eq!(relative_time(now - 2 * 86_400, now), "2 days ago");
+        assert_eq!(relative_time(now - 3 * 604_800, now), "3 weeks ago");
+        assert_eq!(relative_time(now - 5 * 2_592_000, now), "5 months ago");
+        assert_eq!(relative_time(now - 2 * 31_536_000, now), "2 years ago");
+        assert_eq!(relative_time(now + 60, now), "in the future");
     }
 
     #[test]
