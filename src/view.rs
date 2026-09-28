@@ -157,7 +157,6 @@ enum RefAlign {
     Right,
 }
 
-#[derive(Clone, Copy)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum ResizeColumn {
     Date,
@@ -573,6 +572,7 @@ impl GraphView {
                 include_reflogs: false,
                 remote_heads: false,
                 only_tags: false,
+                full_refs: false,
             },
             show_stashes: true,
             show_uncommitted: true,
@@ -2330,7 +2330,7 @@ impl GraphView {
                 let label = *label;
                 let id = *id;
                 h_flex()
-                    .id(("command", id))
+                    .id(id)
                     .w_full()
                     .px_3()
                     .py_1()
@@ -2921,10 +2921,11 @@ impl GraphView {
                         "Fetch",
                         &theme_row,
                         move |cx| {
+                            let name = name_fetch.clone();
                             weak_fetch
                                 .update(cx, |this, cx| {
                                     this.run_op(
-                                        move |repo| git::fetch_remote(&repo.path, &name_fetch),
+                                        move |repo| git::fetch_remote(&repo.path, &name),
                                         cx,
                                     )
                                 })
@@ -2936,10 +2937,11 @@ impl GraphView {
                         "Prune",
                         &theme_row,
                         move |cx| {
+                            let name = name_prune.clone();
                             weak_prune
                                 .update(cx, |this, cx| {
                                     this.run_op(
-                                        move |repo| git::prune_remote(&repo.path, &name_prune),
+                                        move |repo| git::prune_remote(&repo.path, &name),
                                         cx,
                                     )
                                 })
@@ -2951,10 +2953,11 @@ impl GraphView {
                         "Remove",
                         &theme_row,
                         move |cx| {
+                            let name = name_remove.clone();
                             weak_remove
                                 .update(cx, |this, cx| {
                                     this.run_op(
-                                        move |repo| git::remove_remote(&repo.path, &name_remove),
+                                        move |repo| git::remove_remote(&repo.path, &name),
                                         cx,
                                     )
                                 })
@@ -3029,7 +3032,7 @@ impl GraphView {
                 let weak = weak.clone();
                 let theme = theme.clone();
                 div()
-                    .id(("menu", label.clone()))
+                    .id(format!("menu-{label}"))
                     .px_3()
                     .py_1()
                     .text_sm()
@@ -3328,6 +3331,7 @@ fn render_file_row(
     let path_open = file.path.clone();
     let path_rev = file.path.clone();
     let path_discard = file.path.clone();
+    let review_path = file.path.clone();
     let theme = theme.clone();
     let (sha, reviewed, review_active) = review.unwrap_or_default();
     let needs_review = review_active && !reviewed;
@@ -3344,7 +3348,7 @@ fn render_file_row(
                 .update(cx, |this, cx| this.open_diff(&path, cx))
                 .ok();
         })
-        .child(status_letter(file.status, theme))
+        .child(status_letter(file.status, &theme))
         .child(
             div()
                 .flex_1()
@@ -3372,7 +3376,7 @@ fn render_file_row(
                         let _ = window;
                         cx.stop_propagation();
                         weak_review
-                            .update(cx, |this, cx| this.toggle_reviewed(&sha, &file.path, cx))
+                            .update(cx, |this, cx| this.toggle_reviewed(&sha, &review_path, cx))
                             .ok();
                     })
                     .child(if reviewed { "[x]" } else { "[ ]" }),
@@ -3724,7 +3728,7 @@ impl RowRenderContext {
             .on_mouse_down(MouseButton::Right, move |event: &MouseDownEvent, window, cx| {
                 let _ = window;
                 weak_right
-                    .update(cx, |this, cx| this.open_menu(row_kind, event.position.x, event.position.y))
+                    .update(cx, |this, _cx| this.open_menu(row_kind, event.position.x, event.position.y))
                     .ok();
             })
             .child(
@@ -3844,7 +3848,7 @@ impl RowRenderContext {
             .on_mouse_down(MouseButton::Right, move |event: &MouseDownEvent, window, cx| {
                 let _ = window;
                 weak_right
-                    .update(cx, |this, cx| this.open_menu(RowKind::Commit(index), event.position.x, event.position.y))
+                    .update(cx, |this, _cx| this.open_menu(RowKind::Commit(index), event.position.x, event.position.y))
                     .ok();
             })
             .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, window, cx| {
