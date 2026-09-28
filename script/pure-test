@@ -53,6 +53,8 @@ pub mod layout;
 pub mod markdown;
 #[path = "$here/src/review.rs"]
 pub mod review;
+#[path = "$here/src/workspace.rs"]
+pub mod workspace;
 EOF
 
 sed 's/use gitviz::git/use gitviz_pure::git/' \

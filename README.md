@@ -161,6 +161,8 @@ script/build       cargo 包装脚本
   - [x] Markdown 子集（粗体/斜体/行内代码）
 - 其他
   - [x] 多仓库（Cmd+P 搜索切换 + 仓库排序 + 发现深度 + 动态 Add/Remove repository）
+  - [x] 打开仓库：原生目录选择器 “Open repository…” / 把文件夹或仓库拖拽到窗口
+  - [x] Workspace 文件（`.gitviz-workspace`）：一行一个仓库/目录，支持 `#` 注释与 `~`；命令面板 “Open workspace…” / “Save workspace…”，也可作为命令行参数传入
   - [~] 首字母头像（网络头像省略）；命令面板（⇧⌘P）已做；状态栏入口 N/A
   - [x] 仓库最大发现深度可配置
 

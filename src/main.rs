@@ -17,7 +17,9 @@ fn main() {
         if args.is_empty() {
             vec![std::env::current_dir().expect("failed to read current directory")]
         } else {
-            args
+            // Paths may include `.gitviz-workspace` files, which are expanded
+            // into their listed roots.
+            gitviz::workspace::expand_roots(&args)
         }
     };
 

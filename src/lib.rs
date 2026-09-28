@@ -12,3 +12,4 @@ pub mod markdown;
 pub mod review;
 pub mod theme;
 pub mod view;
+pub mod workspace;

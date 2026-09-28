@@ -9,9 +9,9 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use gpui::{
-    AnyElement, App, Bounds, ClickEvent, Context, Div, FocusHandle, IntoElement, KeyDownEvent,
-    MouseButton, MouseDownEvent, Pixels, Render, UniformListScrollHandle, Window, div,
-    point, prelude::*, px, uniform_list,
+    AnyElement, App, Bounds, ClickEvent, Context, Div, ExternalPaths, FocusHandle, IntoElement,
+    KeyDownEvent, MouseButton, MouseDownEvent, PathPromptOptions, Pixels, Render,
+    UniformListScrollHandle, Window, div, point, prelude::*, px, uniform_list,
 };
 
 use crate::config::RepoConfig;
@@ -59,6 +59,7 @@ impl Default for Columns {
 pub struct GraphView {
     repos: Vec<Repo>,
     roots: Vec<std::path::PathBuf>,
+    workspace_path: Option<std::path::PathBuf>,
     repo_depth: usize,
     active: usize,
     branch: Option<String>,
@@ -198,6 +199,9 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Fetch into local branch…", "fetch-into"),
     ("Add repository…", "add-repo"),
     ("Remove current repository", "remove-repo"),
+    ("Open repository…", "open-repo"),
+    ("Open workspace…", "open-workspace"),
+    ("Save workspace…", "save-workspace"),
 ];
 
 fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
@@ -511,6 +515,7 @@ impl GraphView {
         let mut this = Self {
             repos,
             roots,
+            workspace_path: None,
             repo_depth: crate::discovery::DEFAULT_DEPTH,
             active: 0,
             branch: None,
@@ -1251,6 +1256,64 @@ impl GraphView {
         self.load(cx);
     }
 
+    /// Adds a repository root (idempotently). Returns whether the roots changed.
+    fn add_root(&mut self, path: std::path::PathBuf) -> bool {
+        if path.exists() && !self.roots.contains(&path) {
+            self.roots.push(path);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Loads a `.gitviz-workspace` file, appending its listed roots.
+    fn open_workspace(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            self.error = Some(format!("failed to read {}", path.display()));
+            cx.notify();
+            return;
+        };
+        for line in crate::workspace::parse(&text) {
+            self.add_root(crate::workspace::expand_tilde(&line));
+        }
+        self.workspace_path = Some(path.to_path_buf());
+        self.rediscover(cx);
+    }
+
+    /// Writes the current roots to a `.gitviz-workspace` file.
+    fn save_workspace(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
+        let text = crate::workspace::serialize(&self.roots);
+        match std::fs::write(path, text) {
+            Ok(()) => {
+                self.workspace_path = Some(path.to_path_buf());
+                self.error = None;
+            }
+            Err(error) => self.error = Some(error.to_string()),
+        }
+        cx.notify();
+    }
+
+    /// Handles paths dragged onto the window: repository folders are added as
+    /// roots, and `.gitviz-workspace` files are loaded.
+    fn on_drop_paths(
+        &mut self,
+        paths: &ExternalPaths,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut changed = false;
+        for path in paths.paths() {
+            if path.to_string_lossy().ends_with(crate::workspace::FILE_SUFFIX) {
+                self.open_workspace(path, cx);
+            } else {
+                changed |= self.add_root(path.clone());
+            }
+        }
+        if changed {
+            self.rediscover(cx);
+        }
+    }
+
     fn export_repo_config(&mut self, cx: &mut Context<Self>) {
         let Some(repo) = self.active_repo().cloned() else {
             return;
@@ -1403,11 +1466,8 @@ impl GraphView {
                 );
             }
             PromptAction::AddRepository => {
-                let path = expand_tilde(&name);
-                if path.exists() {
-                    if !self.roots.contains(&path) {
-                        self.roots.push(path);
-                    }
+                let path = crate::workspace::expand_tilde(&name);
+                if self.add_root(path) {
                     self.rediscover(cx);
                 }
             }
@@ -1751,6 +1811,7 @@ impl Render for GraphView {
             .on_key_down(cx.listener(Self::on_key_down))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
+            .on_drop::<ExternalPaths>(cx.listener(Self::on_drop_paths))
             .child(header)
             .children(search_bar)
             .child(self.render_column_header(weak.clone()))
@@ -1867,6 +1928,58 @@ impl GraphView {
             "remove-repo" => {
                 self.remove_active_repo(cx);
                 return;
+            }
+            "open-repo" => {
+                let receiver = cx.prompt_for_paths(PathPromptOptions {
+                    files: false,
+                    directories: true,
+                    multiple: true,
+                    prompt: Some("Open repository or folder".into()),
+                });
+                cx.spawn(async move |this, cx| {
+                    if let Ok(Ok(Some(paths))) = receiver.await {
+                        this.update(cx, |this, cx| {
+                            let mut changed = false;
+                            for path in paths {
+                                changed |= this.add_root(path);
+                            }
+                            if changed {
+                                this.rediscover(cx);
+                            }
+                        })
+                        .ok();
+                    }
+                })
+                .detach();
+            }
+            "open-workspace" => {
+                let receiver = cx.prompt_for_paths(PathPromptOptions {
+                    files: true,
+                    directories: false,
+                    multiple: false,
+                    prompt: Some("Open gitviz workspace".into()),
+                });
+                cx.spawn(async move |this, cx| {
+                    if let Ok(Ok(Some(paths))) = receiver.await
+                        && let Some(path) = paths.into_iter().next()
+                    {
+                        this.update(cx, |this, cx| this.open_workspace(&path, cx)).ok();
+                    }
+                })
+                .detach();
+            }
+            "save-workspace" => {
+                let directory = std::env::var_os("HOME")
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                let receiver = cx
+                    .prompt_for_new_path(&directory, Some("repos.gitviz-workspace"));
+                cx.spawn(async move |this, cx| {
+                    if let Ok(Ok(Some(path))) = receiver.await {
+                        this.update(cx, |this, cx| this.save_workspace(&path, cx)).ok();
+                    }
+                })
+                .detach();
             }
             "pr" => {
                 let branch = self.branch.clone().unwrap_or_default();
@@ -2838,6 +2951,9 @@ impl GraphView {
             ("Fetch into local branch…", "fetch-into"),
             ("Add repository…", "add-repo"),
             ("Remove current repository", "remove-repo"),
+            ("Open repository…", "open-repo"),
+            ("Open workspace…", "open-workspace"),
+            ("Save workspace…", "save-workspace"),
             ("Pull current branch", "pull"),
             ("Clear branch globs", "clear-globs"),
             ("End all code reviews", "end-reviews"),
@@ -3231,6 +3347,10 @@ impl GraphView {
             }
             "remove-repo" => {
                 self.remove_active_repo(cx);
+                return;
+            }
+            "open-repo" | "open-workspace" | "save-workspace" => {
+                self.on_chip(id, cx);
                 return;
             }
             "pull" => {
@@ -3936,16 +4056,6 @@ fn parse_emoji_mappings(mappings: &[String]) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Expands a leading `~/` to the user's home directory.
-fn expand_tilde(path: &str) -> std::path::PathBuf {
-    if let Some(rest) = path.strip_prefix("~/")
-        && let Some(home) = std::env::var_os("HOME")
-    {
-        return std::path::PathBuf::from(home).join(rest);
-    }
-    std::path::PathBuf::from(path)
-}
-
 /// Picks the single-letter status to show for an uncommitted file.
 fn status_entry_letter(entry: &StatusEntry) -> char {
     if entry.is_untracked() {
@@ -4531,22 +4641,6 @@ mod tests {
         let mut filled = Containment::default();
         filled.branches.push("main".to_string());
         assert!(!filled.is_empty());
-    }
-
-    #[test]
-    fn tilde_expansion_only_touches_home_prefix() {
-        assert_eq!(
-            expand_tilde("/absolute/path"),
-            std::path::PathBuf::from("/absolute/path")
-        );
-        assert_eq!(
-            expand_tilde("relative/path"),
-            std::path::PathBuf::from("relative/path")
-        );
-        if let Some(home) = std::env::var_os("HOME") {
-            let home = std::path::PathBuf::from(home);
-            assert_eq!(expand_tilde("~/projects"), home.join("projects"));
-        }
     }
 
     #[test]
