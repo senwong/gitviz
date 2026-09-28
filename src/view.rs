@@ -958,6 +958,8 @@ impl GraphView {
     }
 
     fn select_row(&mut self, row: RowKind, cx: &mut Context<Self>) {
+        // Reveal the row on the next render (keeps keyboard navigation in view).
+        self.pending_scroll = Some(row);
         match row {
             RowKind::Commit(index) => {
                 self.selected = Some(row);
@@ -2056,6 +2058,7 @@ impl Render for GraphView {
         // rows
         let row_ctx = RowRenderContext {
             commits: Arc::new(self.commits.clone()),
+            lane_count: self.commits.iter().map(|commit| commit.lane).max().unwrap_or(0) + 1,
             status: Arc::new(self.status.clone()),
             stashes: Arc::new(self.stashes.clone()),
             rows: Arc::new(self.rows.clone()),
@@ -4489,6 +4492,8 @@ impl GraphView {
 /// Row rendering context so the `uniform_list` closure can be `'static`.
 struct RowRenderContext {
     commits: Arc<Vec<Commit>>,
+    /// Number of lanes (max lane + 1), for sizing the graph gutter.
+    lane_count: usize,
     status: Arc<Vec<StatusEntry>>,
     stashes: Arc<Vec<StashEntry>>,
     rows: Arc<Vec<RowKind>>,
@@ -4574,9 +4579,7 @@ impl RowRenderContext {
         let weak_click = weak.clone();
         let weak_right = weak;
         let theme = theme.clone();
-        let lane_area = (self.commits.iter().map(|c| c.lane).max().unwrap_or(0) + 1) as f32
-            * LANE_WIDTH
-            + 8.;
+        let lane_area = self.lane_count as f32 * LANE_WIDTH + 8.;
         h_flex()
             .id(format!("synthetic-{}", primary))
             .h(px(ROW_HEIGHT))
@@ -4632,9 +4635,7 @@ impl RowRenderContext {
     ) -> AnyElement {
         let colors = self.lane_colors;
         let graph_style = self.graph_style;
-        let lane_area = (self.commits.iter().map(|c| c.lane).max().unwrap_or(0) + 1) as f32
-            * LANE_WIDTH
-            + 8.;
+        let lane_area = self.lane_count as f32 * LANE_WIDTH + 8.;
         let lane_area_px = px(lane_area);
         let commit = commit.clone();
         let is_compare = self.compare == Some(index);
