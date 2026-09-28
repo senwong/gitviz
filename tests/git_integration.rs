@@ -408,6 +408,10 @@ fn lists_remote_branches() {
     assert!(branches.iter().any(|branch| branch == "origin/feature"));
     assert!(!branches.iter().any(|branch| branch.ends_with("/HEAD")));
 
+    // Checking out a remote branch creates a local tracking branch.
+    git::checkout_remote_branch(&local.path, "origin/feature").unwrap();
+    assert_eq!(git::head_branch(&local.path).as_deref(), Some("feature"));
+
     let _ = std::fs::remove_dir_all(&bare);
 }
 

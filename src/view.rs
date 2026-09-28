@@ -3930,6 +3930,8 @@ impl GraphView {
             .iter()
             .map(|name| {
                 let copy_name = name.clone();
+                let checkout_name = name.clone();
+                let weak_checkout = weak.clone();
                 let theme_row = theme.clone();
                 h_flex()
                     .w_full()
@@ -3945,6 +3947,22 @@ impl GraphView {
                             .text_color(theme.text)
                             .child(name.clone()),
                     )
+                    .child(action_button(
+                        format!("remote-branch-checkout-{name}"),
+                        "Checkout",
+                        &theme_row,
+                        move |cx| {
+                            let name = checkout_name.clone();
+                            weak_checkout
+                                .update(cx, |this, cx| {
+                                    this.run_op(
+                                        move |repo| git::checkout_remote_branch(&repo.path, &name),
+                                        cx,
+                                    )
+                                })
+                                .ok();
+                        },
+                    ))
                     .child(action_button(
                         format!("remote-branch-copy-{name}"),
                         "Copy",

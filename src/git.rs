@@ -338,6 +338,21 @@ pub fn remote_branches(repo: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The local branch name a remote-tracking branch would check out to
+/// (`origin/feature` -> `feature`).
+pub fn local_name_for_remote(remote_branch: &str) -> &str {
+    remote_branch
+        .split_once('/')
+        .map(|(_, rest)| rest)
+        .unwrap_or(remote_branch)
+}
+
+/// Creates (and checks out) a local tracking branch for a remote branch.
+pub fn checkout_remote_branch(repo: &Path, remote_branch: &str) -> anyhow::Result<()> {
+    let local = local_name_for_remote(remote_branch);
+    run(repo, &["switch", "-c", local, "--track", remote_branch]).map(|_| ())
+}
+
 /// Parses `git rev-list --left-right --count <branch>...HEAD` output of the
 /// form `"<ahead>\t<behind>"` into `(ahead, behind)`.
 ///
@@ -1135,6 +1150,13 @@ mod tests {
         assert_eq!(parse_ahead_behind("0\t1\n"), Some((0, 1)));
         assert_eq!(parse_ahead_behind("3 2"), Some((3, 2)));
         assert_eq!(parse_ahead_behind("garbage"), None);
+    }
+
+    #[test]
+    fn local_name_for_remote_strips_the_remote() {
+        assert_eq!(local_name_for_remote("origin/feature"), "feature");
+        assert_eq!(local_name_for_remote("upstream/dev/x"), "dev/x");
+        assert_eq!(local_name_for_remote("localonly"), "localonly");
     }
 }
 
