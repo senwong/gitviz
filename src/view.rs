@@ -714,6 +714,17 @@ impl GraphView {
             || self.branch_filter.open
     }
 
+    /// Closes every dialog-style overlay (used for click-outside-to-dismiss).
+    fn close_overlays(&mut self) {
+        self.palette.open = false;
+        self.commands.open = false;
+        self.branch_filter.open = false;
+        self.settings_open = false;
+        self.recent_menu.open = false;
+        self.theme_menu.open = false;
+        self.prompt = None;
+    }
+
     // -- data -------------------------------------------------------------
 
     fn load(&mut self, cx: &mut Context<Self>) {
@@ -2210,7 +2221,10 @@ impl Render for GraphView {
 
         let palette = self.palette.open.then(|| self.render_palette(weak.clone()));
         let commands = self.commands.open.then(|| self.render_commands(weak.clone()));
-        let prompt = self.prompt.is_some().then(|| self.render_prompt());
+        let prompt = self
+            .prompt
+            .is_some()
+            .then(|| self.render_prompt(weak.clone()));
         let menu = self.menu.is_some().then(|| self.render_menu(weak.clone()));
         // A full-window backdrop behind the context menu: clicking anywhere
         // outside the menu dismisses it.
@@ -3040,7 +3054,7 @@ impl GraphView {
             self.commands.query.clone()
         };
 
-        overlay(theme.clone(), 120., 520., vec![
+        overlay(theme.clone(), 120., 520., overlay_close(weak.clone()), vec![
             h_flex()
                 .w_full()
                 .px_3()
@@ -3205,7 +3219,7 @@ impl GraphView {
             self.palette.query.clone()
         };
 
-        overlay(theme.clone(), 120., 560., vec![
+        overlay(theme.clone(), 120., 560., overlay_close(weak.clone()), vec![
             h_flex()
                 .w_full()
                 .px_3()
@@ -3416,7 +3430,7 @@ impl GraphView {
             })
             .collect();
 
-        overlay(theme.clone(), 120., 560., vec![
+        overlay(theme.clone(), 120., 560., overlay_close(weak.clone()), vec![
             div()
                 .w_full()
                 .px_3()
@@ -3492,7 +3506,7 @@ impl GraphView {
             })
             .collect();
 
-        overlay(theme.clone(), 120., 480., vec![
+        overlay(theme.clone(), 120., 480., overlay_close(weak.clone()), vec![
             div()
                 .w_full()
                 .px_3()
@@ -3512,14 +3526,14 @@ impl GraphView {
         ])
     }
 
-    fn render_prompt(&self) -> AnyElement {
+    fn render_prompt(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
         let theme = self.theme.clone();
         let (title, input) = self
             .prompt
             .as_ref()
             .map(|prompt| (prompt.title.clone(), prompt.input.clone()))
             .unwrap_or_default();
-        overlay(theme.clone(), 160., 480., vec![
+        overlay(theme.clone(), 160., 480., overlay_close(weak.clone()), vec![
             div()
                 .w_full()
                 .px_3()
@@ -3735,7 +3749,7 @@ impl GraphView {
             self.branch_filter.query.clone()
         };
 
-        overlay(theme.clone(), 120., 600., vec![
+        overlay(theme.clone(), 120., 600., overlay_close(weak.clone()), vec![
             h_flex()
                 .w_full()
                 .px_3()
@@ -3997,7 +4011,7 @@ impl GraphView {
                 .into_any_element(),
         );
 
-        overlay(theme.clone(), 100., 460., vec![
+        overlay(theme.clone(), 100., 460., overlay_close(weak.clone()), vec![
             div()
                 .w_full()
                 .px_3()
@@ -4408,7 +4422,25 @@ fn overlay_hint(theme: &Theme, text: &str) -> AnyElement {
         .into_any_element()
 }
 
-fn overlay(theme: Theme, top: f32, width: f32, children: Vec<AnyElement>) -> AnyElement {
+/// Builds a callback that dismisses all dialog overlays.
+fn overlay_close(weak: gpui::WeakEntity<GraphView>) -> impl Fn(&mut App) + 'static {
+    move |cx: &mut App| {
+        weak.update(cx, |this, cx| {
+            this.close_overlays();
+            cx.notify();
+        })
+        .ok();
+    }
+}
+
+fn overlay(
+    theme: Theme,
+    top: f32,
+    width: f32,
+    close: impl Fn(&mut App) + 'static,
+    children: Vec<AnyElement>,
+) -> AnyElement {
+    let overlay_bg = theme.overlay;
     div()
         .absolute()
         .top_0()
@@ -4417,7 +4449,19 @@ fn overlay(theme: Theme, top: f32, width: f32, children: Vec<AnyElement>) -> Any
         .flex()
         .justify_center()
         .pt(px(top))
-        .bg(theme.overlay)
+        // Clicking the dimmed background dismisses the overlay.
+        .child(
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .size_full()
+                .bg(overlay_bg)
+                .on_mouse_down(
+                    MouseButton::Left,
+                    move |_: &MouseDownEvent, _window, cx| close(cx),
+                ),
+        )
         .child(
             v_flex()
                 .w(px(width))
