@@ -130,7 +130,7 @@ script/build       cargo 包装脚本
   - [x] 高亮匹配（⌘G 导航）、date/ref 名称匹配
 - 仓库设置
   - [x] remotes 查看/增删改/fetch/prune
-  - [x] Issue Linking、Pull Request Creation（GitHub/GitLab/Bitbucket）
+  - [x] Issue Linking、Pull Request Creation（GitHub/GitLab/Bitbucket + `.gitviz.conf` 自定义 `pr_provider` 模板）
   - [x] 配置导出到仓库文件（.gitviz.conf）
 - 键盘快捷键
   - [x] Cmd+F / Cmd+R / Cmd+S(shift) / Cmd+H / Up/Down / Enter / Esc

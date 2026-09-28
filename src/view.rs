@@ -88,6 +88,7 @@ pub struct GraphView {
     hidden_actions: Vec<String>,
     custom_emoji: Vec<(String, String)>,
     graph_style: layout::GraphStyle,
+    custom_pr_provider: String,
     date_short: bool,
     relative_dates: bool,
     resize_drag: Option<ResizeDrag>,
@@ -534,6 +535,7 @@ impl GraphView {
             hidden_actions: Vec::new(),
             custom_emoji: Vec::new(),
             graph_style: layout::GraphStyle::default(),
+            custom_pr_provider: String::new(),
             date_short: false,
             relative_dates: false,
             resize_drag: None,
@@ -1186,6 +1188,7 @@ impl GraphView {
         self.hidden_actions = config.hidden_actions;
         self.custom_emoji = parse_emoji_mappings(&config.emoji_mappings);
         self.graph_style = layout::GraphStyle::parse(&config.graph_style);
+        self.custom_pr_provider = config.pr_provider.clone();
     }
 
     fn sort_repos(&mut self) {
@@ -1258,6 +1261,7 @@ impl GraphView {
                 .map(|(code, emoji)| format!("{code}:{emoji}"))
                 .collect(),
             graph_style: self.graph_style.as_str().to_string(),
+            pr_provider: self.custom_pr_provider.clone(),
         };
         match config.save(&repo.path) {
             Ok(()) => {
@@ -1851,11 +1855,18 @@ impl GraphView {
                     .and_then(|repo| git::default_branch(&repo.path))
                     .unwrap_or_else(|| "main".to_string());
                 if let Some(info) = self.remote_info.clone() {
-                    let url = info.pr_url(
-                        &base,
-                        &branch,
-                        &format!("Merge {branch} into {base}"),
-                    );
+                    let url = if self.custom_pr_provider.trim().is_empty() {
+                        info.pr_url(&base, &branch, &format!("Merge {branch} into {base}"))
+                    } else {
+                        git::render_pr_template(
+                            &self.custom_pr_provider,
+                            &info.host,
+                            &info.owner,
+                            &info.repo,
+                            &base,
+                            &branch,
+                        )
+                    };
                     let _ = git::open_url(&url);
                 }
             }

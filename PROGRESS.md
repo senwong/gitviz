@@ -65,6 +65,7 @@
 - 批次 25（A 项）：**Stash 详情**——选中 stash 时用 `git stash show --numstat` 列出文件、`git stash diff`（`stash@{n}^1..stash@{n}`）查看单文件 diff；顺带修正 `ChangedFile` 缺少 `status` 的构造（`select_row` 未提交文件、numstat 解析）并补 `status_entry_letter`。**新增 `lists_and_diffs_stash_contents` 集成测试、`status_entry_letter` 单测**
 - 批次 26（A 项）：**相对日期**（“3 days ago”，设置面板 “Relative dates”，`relative_time` 纯函数）。**新增 `relative_time` 分档单测**
 - 批次 27（A 项）：**悬浮包含信息补充 stash**——`git::stashes_containing`（`merge-base --is-ancestor` 遍历 stash），`Containment` 增加 `stashes` 并显示在底部信息条。**新增 `stashes_containing_reports_ancestor_commits` 集成测试**
+- 批次 28（A 项）：**自定义 PR Provider 模板**——`.gitviz.conf` 的 `pr_provider`（占位符 `{host}/{owner}/{repo}/{base}/{head}`），非空时优先于内置 provider。**新增 `render_pr_template` 单测、config 往返扩展**
 
 ## 文件结构
 

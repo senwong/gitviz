@@ -33,6 +33,8 @@ pub struct RepoConfig {
     pub emoji_mappings: Vec<String>,
     /// Graph connector style: `rounded` (default) or `angular`.
     pub graph_style: String,
+    /// Custom Pull Request URL template (empty = use the built-in providers).
+    pub pr_provider: String,
 }
 
 impl Default for RepoConfig {
@@ -58,6 +60,7 @@ impl Default for RepoConfig {
             hidden_actions: Vec::new(),
             emoji_mappings: Vec::new(),
             graph_style: "rounded".to_string(),
+            pr_provider: String::new(),
         }
     }
 }
@@ -110,6 +113,7 @@ impl RepoConfig {
                     config.emoji_mappings = split_list(value);
                 }
                 "graph_style" => config.graph_style = value.to_string(),
+                "pr_provider" => config.pr_provider = value.to_string(),
                 _ => {}
             }
         }
@@ -148,6 +152,7 @@ impl RepoConfig {
             self.emoji_mappings.join(";")
         ));
         output.push_str(&format!("graph_style={}\n", self.graph_style));
+        output.push_str(&format!("pr_provider={}\n", self.pr_provider));
         std::fs::write(Self::path(repo), output)?;
         Ok(())
     }
@@ -184,6 +189,7 @@ mod tests {
         config.hidden_actions = vec!["revert".to_string()];
         config.emoji_mappings = vec!["shipit:🚢".to_string()];
         config.graph_style = "angular".to_string();
+        config.pr_provider = "https://git.example.com/{owner}/{repo}/compare/{base}...{head}".to_string();
         config.save(&dir).unwrap();
 
         let loaded = RepoConfig::load(&dir).unwrap();
@@ -195,6 +201,10 @@ mod tests {
         assert_eq!(loaded.hidden_actions, vec!["revert"]);
         assert_eq!(loaded.emoji_mappings, vec!["shipit:🚢"]);
         assert_eq!(loaded.graph_style, "angular");
+        assert_eq!(
+            loaded.pr_provider,
+            "https://git.example.com/{owner}/{repo}/compare/{base}...{head}"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }

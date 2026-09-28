@@ -748,6 +748,24 @@ pub fn parse_remote(url: &str) -> Option<RemoteInfo> {
     })
 }
 
+/// Expands a custom Pull Request URL template. Supported placeholders:
+/// `{host}`, `{owner}`, `{repo}`, `{base}` and `{head}`.
+pub fn render_pr_template(
+    template: &str,
+    host: &str,
+    owner: &str,
+    repo: &str,
+    base: &str,
+    head: &str,
+) -> String {
+    template
+        .replace("{host}", host)
+        .replace("{owner}", owner)
+        .replace("{repo}", repo)
+        .replace("{base}", base)
+        .replace("{head}", head)
+}
+
 impl RemoteInfo {
     pub fn web_url(&self) -> String {
         format!("https://{}/{}/{}", self.host, self.owner, self.repo)
@@ -999,6 +1017,20 @@ mod tests {
         assert_eq!(
             annotated_tag_args("v1.0", "abc123", "release 1.0"),
             vec!["tag", "-a", "v1.0", "abc123", "-m", "release 1.0"]
+        );
+    }
+
+    #[test]
+    fn pr_template_fills_placeholders() {
+        let template = "https://git.example.com/{owner}/{repo}/compare/{base}...{head}?host={host}";
+        assert_eq!(
+            render_pr_template(template, "git.example.com", "acme", "widget", "main", "feature"),
+            "https://git.example.com/acme/widget/compare/main...feature?host=git.example.com"
+        );
+        // Unknown placeholders are left untouched.
+        assert_eq!(
+            render_pr_template("{owner}/{unknown}", "h", "acme", "r", "b", "x"),
+            "acme/{unknown}"
         );
     }
 }
