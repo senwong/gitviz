@@ -58,6 +58,8 @@ impl Default for Columns {
 
 pub struct GraphView {
     repos: Vec<Repo>,
+    roots: Vec<std::path::PathBuf>,
+    repo_depth: usize,
     active: usize,
     branch: Option<String>,
     commits: Vec<Commit>,
@@ -89,6 +91,8 @@ pub struct GraphView {
     matches: Vec<usize>,
     match_cursor: usize,
     signature_details: Option<String>,
+    branches_containing: Vec<String>,
+    tags_containing: Vec<String>,
     filter: LogFilter,
     show_stashes: bool,
     show_uncommitted: bool,
@@ -181,6 +185,10 @@ fn find_matches(commits: &[Commit], query: &str) -> Vec<usize> {
         })
         .map(|(index, _)| index)
         .collect()
+}
+
+fn adjust_width(width: f32, delta: f32) -> f32 {
+    (width + delta).clamp(48., 480.)
 }
 
 fn format_refs(refs: &[String], combine: bool, align: RefAlign) -> Vec<String> {
@@ -307,12 +315,19 @@ struct BranchFilter {
 }
 
 impl GraphView {
-    pub fn new(repos: Vec<Repo>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        repos: Vec<Repo>,
+        roots: Vec<std::path::PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let focus_handle = cx.focus_handle();
         window.focus(&focus_handle, cx);
 
         let mut this = Self {
             repos,
+            roots,
+            repo_depth: crate::discovery::DEFAULT_DEPTH,
             active: 0,
             branch: None,
             commits: Vec::new(),
@@ -344,6 +359,8 @@ impl GraphView {
             matches: Vec::new(),
             match_cursor: 0,
             signature_details: None,
+            branches_containing: Vec::new(),
+            tags_containing: Vec::new(),
             filter: LogFilter {
                 branches: true,
                 remotes: true,
@@ -407,6 +424,8 @@ impl GraphView {
         self.branch = git::head_branch(&repo.path);
         self.signature = None;
         self.signature_details = None;
+        self.branches_containing.clear();
+        self.tags_containing.clear();
         self.matches.clear();
         self.match_cursor = 0;
         self.head_ancestors = git::head_ancestors(&repo.path, 50_000);
@@ -508,6 +527,8 @@ impl GraphView {
             }
             self.signature = git::signature_status(&repo.path, &sha);
             self.signature_details = git::signature_details(&repo.path, &sha);
+            self.branches_containing = git::branches_containing(&repo.path, &sha);
+            self.tags_containing = git::tags_containing(&repo.path, &sha);
         }
         cx.notify();
     }
@@ -890,6 +911,16 @@ impl GraphView {
         {
             self.active = index;
         }
+    }
+
+    fn rediscover(&mut self, cx: &mut Context<Self>) {
+        let active_path = self.repos.get(self.active).map(|repo| repo.path.clone());
+        self.repos = crate::discovery::discover_with_depth(&self.roots, self.repo_depth);
+        self.active = active_path
+            .and_then(|path| self.repos.iter().position(|repo| repo.path == path))
+            .unwrap_or(0);
+        self.sort_repos();
+        self.load(cx);
     }
 
     fn export_repo_config(&mut self, cx: &mut Context<Self>) {
@@ -1427,6 +1458,22 @@ impl GraphView {
                         .child(details),
                 )
             })
+            .when(
+                !self.branches_containing.is_empty() || !self.tags_containing.is_empty(),
+                |this| {
+                    let mut parts: Vec<String> = self.branches_containing.clone();
+                    parts.extend(self.tags_containing.iter().map(|tag| format!("tag:{tag}")));
+                    this.child(
+                        div()
+                            .w_full()
+                            .px_3()
+                            .py_1()
+                            .text_sm()
+                            .text_color(theme.text_muted)
+                            .child(format!("contained in: {}", parts.join(", "))),
+                    )
+                },
+            )
             .child(self.render_message(&detail.message))
             .child(self.render_tags(&sha))
             .child(self.render_detail_actions(&sha, weak))
@@ -1859,6 +1906,14 @@ impl GraphView {
             ("Cycle repository order (name/path/given)", "repo-order"),
             ("Cycle reference alignment", "ref-align"),
             ("Cycle lane colours", "color-preset"),
+            ("Date width −", "width-date-minus"),
+            ("Date width +", "width-date-plus"),
+            ("Author width −", "width-author-minus"),
+            ("Author width +", "width-author-plus"),
+            ("Commit width −", "width-commit-minus"),
+            ("Commit width +", "width-commit-plus"),
+            ("Discovery depth −", "depth-minus"),
+            ("Discovery depth +", "depth-plus"),
             ("Export configuration to .gitviz.conf", "export-config"),
             ("End all code reviews", "end-reviews"),
         ] {
@@ -2150,6 +2205,22 @@ impl GraphView {
                 self.sort_repos();
             }
             "color-preset" => self.color_preset = (self.color_preset + 1) % 3,
+            "width-date-minus" => self.date_width = adjust_width(self.date_width, -20.),
+            "width-date-plus" => self.date_width = adjust_width(self.date_width, 20.),
+            "width-author-minus" => self.author_width = adjust_width(self.author_width, -20.),
+            "width-author-plus" => self.author_width = adjust_width(self.author_width, 20.),
+            "width-commit-minus" => self.commit_width = adjust_width(self.commit_width, -20.),
+            "width-commit-plus" => self.commit_width = adjust_width(self.commit_width, 20.),
+            "depth-minus" => {
+                self.repo_depth = self.repo_depth.saturating_sub(1);
+                self.rediscover(cx);
+                return;
+            }
+            "depth-plus" => {
+                self.repo_depth += 1;
+                self.rediscover(cx);
+                return;
+            }
             "file-tree" => self.file_tree = !self.file_tree,
             "compact-folders" => self.compact_folders = !self.compact_folders,
             "remote-heads" => {
@@ -2992,5 +3063,12 @@ mod tests {
         assert_eq!(find_matches(&commits, "alice"), vec![1]);
         assert_eq!(find_matches(&commits, "abc"), vec![0]);
         assert!(find_matches(&commits, "").is_empty());
+    }
+
+    #[test]
+    fn column_widths_are_clamped() {
+        assert_eq!(adjust_width(200., 20.), 220.);
+        assert_eq!(adjust_width(40., -20.), 48.);
+        assert_eq!(adjust_width(470., 40.), 480.);
     }
 }

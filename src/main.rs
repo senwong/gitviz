@@ -22,6 +22,7 @@ fn main() {
     };
 
     application().run(move |cx: &mut App| {
+        let search_roots = roots.clone();
         let repos = discovery::discover(&roots);
 
         let bounds = Bounds::centered(None, size(px(1100.), px(760.)), cx);
@@ -30,7 +31,9 @@ fn main() {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 ..Default::default()
             },
-            |window, cx| cx.new(|cx| view::GraphView::new(repos, window, cx)),
+            move |window, cx| {
+                cx.new(|cx| view::GraphView::new(repos, search_roots, window, cx))
+            },
         )
         .expect("failed to open window");
 

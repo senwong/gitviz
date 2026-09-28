@@ -154,6 +154,29 @@ fn compare_and_diff_between_commits() {
 }
 
 #[test]
+fn containing_branches_and_tags() {
+    let repo = TempRepo::new("contains");
+    repo.commit("a.txt", "1\n", "one");
+    let first = git::log(&repo.path, 1, &LogFilter::default()).unwrap()[0]
+        .sha
+        .clone();
+    repo.commit("b.txt", "2\n", "two");
+
+    git::create_tag(&repo.path, "v1", &first).unwrap();
+
+    assert!(
+        git::branches_containing(&repo.path, &first)
+            .iter()
+            .any(|branch| branch == "main")
+    );
+    assert!(
+        git::tags_containing(&repo.path, &first)
+            .iter()
+            .any(|tag| tag == "v1")
+    );
+}
+
+#[test]
 fn remotes_are_readable() {
     let repo = TempRepo::new("remote");
     repo.commit("a.txt", "1\n", "one");

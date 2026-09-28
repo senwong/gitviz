@@ -215,6 +215,23 @@ pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<
     Ok(commits)
 }
 
+/// Local branches whose history contains `sha`.
+pub fn branches_containing(repo: &Path, sha: &str) -> Vec<String> {
+    run(
+        repo,
+        &["branch", "--contains", sha, "--format=%(refname:short)"],
+    )
+    .map(|output| lines(&output))
+    .unwrap_or_default()
+}
+
+/// Tags whose history contains `sha`.
+pub fn tags_containing(repo: &Path, sha: &str) -> Vec<String> {
+    run(repo, &["tag", "--contains", sha])
+        .map(|output| lines(&output))
+        .unwrap_or_default()
+}
+
 /// Loads the full commit message plus the numstat of changed files.
 pub fn commit_detail(repo: &Path, sha: &str) -> anyhow::Result<CommitDetail> {
     let header = run(

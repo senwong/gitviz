@@ -42,6 +42,7 @@
 - 批次 3：emoji、markdown、remotes 管理、PR/issue 链接、load more、签名、mailmap/reflog、代码审查持久化（90 天）、仓库配置导入导出（`.gitviz.conf`）、仓库排序、打开文件/复制路径、消息 URL、悬浮信息条、Drop commit
 - 批次 4：改动文件状态字母（A/M/D/R/U）、详情文件树（compact folders）、作者头像（首字母圆形）、车道配色预设、remote HEAD refs、annotated tag 详情、列宽字段；**并补上单元测试 + 集成测试 + lib target**
 - 批次 5：命令面板（⇧⌘P）、查找导航（⌘G / ⇧⌘G）+ 匹配高亮、参考标签对齐（combine + align）、仅标签提交（only-tags）、两提交间文件 diff、签名验证详情；**新增 `log_ref_args`/`compare_file_diff`/`signature_details` 及对应单测/集成测试**
+- 批次 6：列宽 +/- 调节、仓库发现深度可调（`discover_with_depth`）、详情显示“包含该提交的分支/标签”；**新增 `adjust_width` 单测、`discovery` 深度单测、`branches_containing`/`tags_containing` 集成测试**
 
 ## 文件结构
 
