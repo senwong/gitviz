@@ -7,11 +7,13 @@
 //! no arguments the current directory is used. Press Cmd+P to search and switch
 //! between the discovered repositories.
 
+mod config;
 mod discovery;
 mod emoji;
 mod git;
 mod layout;
 mod markdown;
+mod review;
 mod view;
 
 use gpui::{App, Bounds, WindowBounds, WindowOptions, px, size};

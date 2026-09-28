@@ -14,6 +14,7 @@ use gpui::{
     uniform_list, v_flex,
 };
 
+use crate::config::RepoConfig;
 use crate::discovery::Repo;
 use crate::emoji;
 use crate::git::{
@@ -22,6 +23,7 @@ use crate::git::{
 };
 use crate::layout;
 use crate::markdown::{self, SpanStyle};
+use crate::review::ReviewStore;
 use crate::theme::Theme;
 
 const COMMIT_LIMIT: usize = 2000;
@@ -71,7 +73,9 @@ pub struct GraphView {
     detail_sha: Option<String>,
     compare_files: Vec<ChangedFile>,
     diff: Option<DiffView>,
-    reviewed: HashSet<String>,
+    review: ReviewStore,
+    hovered: Option<RowKind>,
+    repo_order: RepoOrder,
     filter: LogFilter,
     show_stashes: bool,
     show_uncommitted: bool,
@@ -102,6 +106,31 @@ pub struct GraphView {
 enum DateMode {
     Author,
     Commit,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RepoOrder {
+    Name,
+    Path,
+    Given,
+}
+
+impl RepoOrder {
+    fn as_str(self) -> &'static str {
+        match self {
+            RepoOrder::Name => "name",
+            RepoOrder::Path => "path",
+            RepoOrder::Given => "given",
+        }
+    }
+
+    fn from_str(value: &str) -> Self {
+        match value {
+            "path" => RepoOrder::Path,
+            "given" => RepoOrder::Given,
+            _ => RepoOrder::Name,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -140,6 +169,7 @@ enum MenuAction {
     ResetMixed,
     ResetHard,
     Checkout,
+    Drop,
     CreateBranch,
     CreateTag,
     Push,
@@ -175,6 +205,7 @@ impl MenuAction {
             MenuAction::ResetMixed => "Reset to Here (mixed)",
             MenuAction::ResetHard => "Reset to Here (hard)",
             MenuAction::Checkout => "Checkout Commit",
+            MenuAction::Drop => "Drop Commit",
             MenuAction::CreateBranch => "Create Branch Here…",
             MenuAction::CreateTag => "Create Tag Here…",
             MenuAction::Push => "Push Branch",
@@ -217,7 +248,9 @@ impl GraphView {
             detail_sha: None,
             compare_files: Vec::new(),
             diff: None,
-            reviewed: HashSet::new(),
+            review: ReviewStore::load(),
+            hovered: None,
+            repo_order: RepoOrder::Name,
             filter: LogFilter {
                 branches: true,
                 remotes: true,
@@ -250,6 +283,8 @@ impl GraphView {
             theme: Theme::dark(),
             focus_handle,
         };
+        this.apply_repo_config();
+        this.sort_repos();
         this.load(cx);
         this
     }
@@ -632,11 +667,96 @@ impl GraphView {
     fn confirm_palette(&mut self, cx: &mut Context<Self>) {
         let filtered = self.filtered_repos();
         if let Some(&index) = filtered.get(self.palette.selected) {
+            self.switch_to(index, cx);
+        }
+    }
+
+    fn switch_to(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.active = index;
+        self.palette.open = false;
+        self.palette.query.clear();
+        self.palette.selected = 0;
+        self.apply_repo_config();
+        self.sort_repos();
+        self.load(cx);
+    }
+
+    fn apply_repo_config(&mut self) {
+        let Some(repo) = self.repos.get(self.active) else {
+            return;
+        };
+        let Some(config) = RepoConfig::load(&repo.path) else {
+            return;
+        };
+        self.filter.branches = config.branches;
+        self.filter.remotes = config.remotes;
+        self.filter.tags = config.tags;
+        self.filter.first_parent = config.first_parent;
+        self.show_stashes = config.show_stashes;
+        self.show_uncommitted = config.show_uncommitted;
+        self.include_untracked = config.include_untracked;
+        self.combine_refs = config.combine_refs;
+        self.emoji_enabled = config.emoji;
+        self.markdown_enabled = config.markdown;
+        self.date_mode = if config.date_commit {
+            DateMode::Commit
+        } else {
+            DateMode::Author
+        };
+        self.columns = Columns {
+            date: config.columns_date,
+            author: config.columns_author,
+            commit: config.columns_commit,
+        };
+        self.repo_order = RepoOrder::from_str(&config.repo_order);
+    }
+
+    fn sort_repos(&mut self) {
+        let active_path = self.repos.get(self.active).map(|repo| repo.path.clone());
+        match self.repo_order {
+            RepoOrder::Name => self.repos.sort_by_key(|repo| repo.name.to_lowercase()),
+            RepoOrder::Path => self
+                .repos
+                .sort_by_key(|repo| repo.path.to_string_lossy().to_lowercase()),
+            RepoOrder::Given => {}
+        }
+        if let Some(path) = active_path
+            && let Some(index) = self.repos.iter().position(|repo| repo.path == path)
+        {
             self.active = index;
-            self.palette.open = false;
-            self.palette.query.clear();
-            self.palette.selected = 0;
-            self.load(cx);
+        }
+    }
+
+    fn export_repo_config(&mut self, cx: &mut Context<Self>) {
+        let Some(repo) = self.active_repo().cloned() else {
+            return;
+        };
+        let config = RepoConfig {
+            branches: self.filter.branches,
+            remotes: self.filter.remotes,
+            tags: self.filter.tags,
+            first_parent: self.filter.first_parent,
+            show_stashes: self.show_stashes,
+            show_uncommitted: self.show_uncommitted,
+            include_untracked: self.include_untracked,
+            combine_refs: self.combine_refs,
+            emoji: self.emoji_enabled,
+            markdown: self.markdown_enabled,
+            date_commit: self.date_mode == DateMode::Commit,
+            columns_date: self.columns.date,
+            columns_author: self.columns.author,
+            columns_commit: self.columns.commit,
+            repo_order: self.repo_order.as_str().to_string(),
+        };
+        match config.save(&repo.path) {
+            Ok(()) => {
+                self.error = None;
+                cx.notify();
+            }
+            Err(error) => {
+                self.error = Some(error.to_string());
+                cx.notify();
+            }
         }
     }
 
@@ -684,6 +804,7 @@ impl GraphView {
                         MenuAction::ResetMixed,
                         MenuAction::ResetHard,
                         MenuAction::Checkout,
+                        MenuAction::Drop,
                         MenuAction::CreateBranch,
                         MenuAction::CreateTag,
                         MenuAction::Push,
@@ -734,6 +855,7 @@ impl GraphView {
                 MenuAction::Checkout => {
                     self.run_op(move |repo| git::checkout_commit(&repo.path, &sha), cx)
                 }
+                MenuAction::Drop => self.run_op(move |repo| git::drop_commit(&repo.path, &sha), cx),
                 MenuAction::CreateBranch => {
                     self.prompt = Some(Prompt {
                         title: "Create branch".into(),
@@ -788,9 +910,8 @@ impl GraphView {
 
     fn toggle_reviewed(&mut self, commit_sha: &str, path: &str, cx: &mut Context<Self>) {
         let key = format!("{commit_sha}\t{path}");
-        if !self.reviewed.remove(&key) {
-            self.reviewed.insert(key);
-        }
+        self.review.toggle(&key);
+        self.review.save();
         cx.notify();
     }
 }
@@ -928,6 +1049,7 @@ impl Render for GraphView {
                     .child(body)
                     .when_some(detail, |this, detail| this.child(detail)),
             )
+            .child(self.render_footer())
             .when_some(diff, |this, diff| this.child(diff))
             .when_some(palette, |this, palette| this.child(palette))
             .when_some(branch_filter, |this, filter| this.child(filter))
@@ -1025,7 +1147,7 @@ impl GraphView {
                 .files
                 .iter()
                 .map(|file| {
-                    let reviewed = self.reviewed.contains(&format!("{sha}\t{}", file.path));
+                    let reviewed = self.review.is_reviewed(&format!("{sha}\t{}", file.path));
                     render_file_row(file, &weak, &theme, Some((sha.clone(), reviewed)))
                 })
                 .collect()
@@ -1189,6 +1311,16 @@ impl GraphView {
             }
         }
 
+        for (index, url) in find_urls(&message).into_iter().enumerate() {
+            let id = format!("url-{index}");
+            buttons.push(
+                action_button(id, "Open Link", &theme, move |_cx| {
+                    let _ = git::open_url(&url);
+                })
+                .into_any_element(),
+            );
+        }
+
         h_flex()
             .w_full()
             .px_3()
@@ -1221,13 +1353,8 @@ impl GraphView {
                     .when(is_selected, |this| this.bg(theme.selected))
                     .on_click(move |_: &ClickEvent, window, cx| {
                         let _ = window;
-                        weak.update(cx, |this, cx| {
-                            this.active = repo_index;
-                            this.palette.open = false;
-                            this.palette.query.clear();
-                            this.load(cx);
-                        })
-                        .ok();
+                        weak.update(cx, |this, cx| this.switch_to(repo_index, cx))
+                            .ok();
                     })
                     .child(div().text_color(theme.text).child(repo.name.clone()))
                     .child(div().flex_1())
@@ -1390,6 +1517,29 @@ impl GraphView {
                     .into_any_element()
             })
             .collect();
+
+        for (label, id) in [
+            ("Cycle repository order (name/path/given)", "repo-order"),
+            ("Export configuration to .gitviz.conf", "export-config"),
+            ("End all code reviews", "end-reviews"),
+        ] {
+            let weak = weak.clone();
+            let theme_row = theme.clone();
+            items.push(
+                h_flex()
+                    .id(id)
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .gap_2()
+                    .on_click(move |_: &ClickEvent, window, cx| {
+                        let _ = window;
+                        weak.update(cx, |this, cx| this.toggle_setting(id, cx)).ok();
+                    })
+                    .child(div().text_color(theme_row.accent).child(label))
+                    .into_any_element(),
+            );
+        }
 
         items.push(
             div()
@@ -1652,6 +1802,22 @@ impl GraphView {
                 self.load(cx);
                 return;
             }
+            "repo-order" => {
+                self.repo_order = match self.repo_order {
+                    RepoOrder::Name => RepoOrder::Path,
+                    RepoOrder::Path => RepoOrder::Given,
+                    RepoOrder::Given => RepoOrder::Name,
+                };
+                self.sort_repos();
+            }
+            "export-config" => {
+                self.export_repo_config(cx);
+                return;
+            }
+            "end-reviews" => {
+                self.review.end_all();
+                self.review.save();
+            }
             _ => {}
         }
         cx.notify();
@@ -1712,6 +1878,10 @@ fn render_file_row(
     let path = file.path.clone();
     let weak_click = weak.clone();
     let weak_review = weak.clone();
+    let weak_copy = weak.clone();
+    let weak_open = weak.clone();
+    let path_copy = file.path.clone();
+    let path_open = file.path.clone();
     let theme = theme.clone();
     let (sha, reviewed) = review.map(|(sha, reviewed)| (sha, reviewed)).unwrap_or_default();
     h_flex()
@@ -1743,23 +1913,50 @@ fn render_file_row(
                 .child(format!("+{} -{}", file.added, file.removed)),
         )
         .when(!sha.is_empty(), |this| {
+            let review_id = format!("review-{}", file.path);
             this.child(
                 div()
-                    .id("review")
+                    .id(review_id)
                     .text_sm()
                     .text_color(if reviewed { theme.accent } else { theme.text_muted })
                     .on_click(move |_: &ClickEvent, window, cx| {
                         let _ = window;
                         cx.stop_propagation();
                         weak_review
-                            .update(cx, |this, cx| {
-                                this.toggle_reviewed(&sha, &file.path, cx)
-                            })
+                            .update(cx, |this, cx| this.toggle_reviewed(&sha, &file.path, cx))
                             .ok();
                     })
                     .child(if reviewed { "[x]" } else { "[ ]" }),
             )
         })
+        .child(
+            div()
+                .id(format!("copy-path-{}", file.path))
+                .text_sm()
+                .text_color(theme.text_muted)
+                .on_click(move |_: &ClickEvent, window, cx| {
+                    let _ = window;
+                    cx.stop_propagation();
+                    weak_copy
+                        .update(cx, |this, cx| this.copy_path(&path_copy, cx))
+                        .ok();
+                })
+                .child("Copy"),
+        )
+        .child(
+            div()
+                .id(format!("open-file-{}", file.path))
+                .text_sm()
+                .text_color(theme.text_muted)
+                .on_click(move |_: &ClickEvent, window, cx| {
+                    let _ = window;
+                    cx.stop_propagation();
+                    weak_open
+                        .update(cx, |this, cx| this.open_file(&path_open, cx))
+                        .ok();
+                })
+                .child("Open"),
+        )
         .into_any_element()
 }
 
@@ -1776,6 +1973,57 @@ impl GraphView {
             });
             cx.notify();
         }
+    }
+
+    fn copy_path(&mut self, path: &str, cx: &mut App) {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string(path.to_string()));
+    }
+
+    fn open_file(&mut self, path: &str, _cx: &mut Context<Self>) {
+        if let Some(repo) = self.active_repo().cloned() {
+            let _ = git::open_path(&repo.path.join(path));
+        }
+    }
+
+    fn render_footer(&self) -> AnyElement {
+        let theme = self.theme.clone();
+        let text = match self.hovered {
+            Some(RowKind::Commit(index)) => self.commits.get(index).map(|commit| {
+                let refs = if commit.refs.is_empty() {
+                    "no refs".to_string()
+                } else {
+                    commit.refs.join(", ")
+                };
+                let ancestor = if self.head_ancestors.contains(&commit.sha) {
+                    "in HEAD"
+                } else {
+                    "not in HEAD"
+                };
+                format!("{}  ·  {}  ·  {}", commit.short_sha(), refs, ancestor)
+            }),
+            Some(RowKind::Stash(index)) => self
+                .stashes
+                .get(index)
+                .map(|stash| format!("stash@{{{index}}}: {}", stash.message)),
+            Some(RowKind::Uncommitted) => {
+                Some(format!("Uncommitted changes: {} files", self.status.len()))
+            }
+            None => None,
+        }
+        .unwrap_or_else(|| "Hover a commit to see its refs".to_string());
+
+        div()
+            .w_full()
+            .px_3()
+            .py_0p5()
+            .bg(theme.panel)
+            .border_t_1()
+            .border_color(theme.border)
+            .text_sm()
+            .text_color(theme.text_muted)
+            .truncate()
+            .child(text)
+            .into_any_element()
     }
 }
 
@@ -1907,6 +2155,7 @@ impl RowRenderContext {
 
         let weak_right = weak.clone();
         let weak_up = weak.clone();
+        let weak_hover = weak.clone();
         let weak_down = weak;
 
         let for_paint = commit.clone();
@@ -1949,6 +2198,21 @@ impl RowRenderContext {
             .items_center()
             .when(is_selected, |this| this.bg(theme.selected))
             .when(is_compare, |this| this.bg(theme.hover))
+            .on_hover(move |hovered, _window, cx| {
+                let target = if *hovered { Some(index) } else { None };
+                weak_hover
+                    .update(cx, |this, cx| {
+                        let current = match this.hovered {
+                            Some(RowKind::Commit(current)) => Some(current),
+                            _ => None,
+                        };
+                        if current != target {
+                            this.hovered = target.map(RowKind::Commit);
+                            cx.notify();
+                        }
+                    })
+                    .ok();
+            })
             .on_mouse_down(MouseButton::Right, move |event: &MouseDownEvent, window, cx| {
                 let _ = window;
                 weak_right
@@ -2048,6 +2312,19 @@ fn span_element(text: String, style: SpanStyle, theme: &Theme) -> AnyElement {
             .rounded_md(),
     };
     element.child(text).into_any_element()
+}
+
+fn find_urls(message: &str) -> Vec<String> {
+    let mut urls = Vec::new();
+    for token in message.split_whitespace() {
+        let token = token.trim_matches(|c: char| {
+            matches!(c, '(' | ')' | ',' | '.' | '"' | '\'' | '<' | '>')
+        });
+        if token.starts_with("http://") || token.starts_with("https://") {
+            urls.push(token.to_string());
+        }
+    }
+    urls
 }
 
 fn find_issues(message: &str) -> Vec<String> {

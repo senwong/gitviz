@@ -563,6 +563,19 @@ pub fn open_url(url: &str) -> anyhow::Result<()> {
         .map_err(Into::into)
 }
 
+pub fn open_path(path: &Path) -> anyhow::Result<()> {
+    std::process::Command::new("open")
+        .arg(path)
+        .status()
+        .map(|_| ())
+        .map_err(Into::into)
+}
+
+/// Drops a single commit from the current branch with `git rebase --onto`.
+pub fn drop_commit(repo: &Path, sha: &str) -> anyhow::Result<()> {
+    run(repo, &["rebase", "--onto", &format!("{sha}^"), sha]).map(|_| ())
+}
+
 /// First character of `git log -1 --format=%G?`, e.g. `G` for a good signature.
 pub fn signature_status(repo: &Path, sha: &str) -> Option<char> {
     run(repo, &["log", "-1", "--format=%G?", sha])
