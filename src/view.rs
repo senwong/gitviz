@@ -81,6 +81,9 @@ pub struct GraphView {
     fetch_prune: bool,
     fetch_prune_tags: bool,
     color_preset: usize,
+    branch_globs: Vec<String>,
+    custom_lane_colors: Vec<String>,
+    date_short: bool,
     date_width: f32,
     author_width: f32,
     commit_width: f32,
@@ -161,6 +164,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Load more commits", "load-more"),
     ("Export config", "export-config"),
     ("End all code reviews", "end-reviews"),
+    ("Resume last code review", "resume-review"),
 ];
 
 fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
@@ -394,6 +398,9 @@ impl GraphView {
             fetch_prune: false,
             fetch_prune_tags: false,
             color_preset: 0,
+            branch_globs: Vec::new(),
+            custom_lane_colors: Vec::new(),
+            date_short: false,
             date_width: 150.,
             author_width: 130.,
             commit_width: 80.,
@@ -962,6 +969,8 @@ impl GraphView {
             commit: config.columns_commit,
         };
         self.repo_order = RepoOrder::from_str(&config.repo_order);
+        self.branch_globs = config.branch_globs;
+        self.custom_lane_colors = config.lane_colors;
     }
 
     fn sort_repos(&mut self) {
@@ -1010,6 +1019,8 @@ impl GraphView {
             columns_author: self.columns.author,
             columns_commit: self.columns.commit,
             repo_order: self.repo_order.as_str().to_string(),
+            branch_globs: self.branch_globs.clone(),
+            lane_colors: self.custom_lane_colors.clone(),
         };
         match config.save(&repo.path) {
             Ok(()) => {
@@ -1024,6 +1035,20 @@ impl GraphView {
     }
 
     fn lane_palette(&self) -> [gpui::Rgba; 8] {
+        if !self.custom_lane_colors.is_empty() {
+            let parsed: Vec<gpui::Rgba> = self
+                .custom_lane_colors
+                .iter()
+                .filter_map(|color| parse_hex_color(color))
+                .collect();
+            if !parsed.is_empty() {
+                let mut colors = [self.theme.lane_colors[0]; 8];
+                for (index, slot) in colors.iter_mut().enumerate() {
+                    *slot = parsed[index % parsed.len()];
+                }
+                return colors;
+            }
+        }
         match self.color_preset % 3 {
             1 => [
                 gpui::rgb(0x1f77b4),
@@ -1341,6 +1366,7 @@ impl Render for GraphView {
             ref_align: self.ref_align,
             matches: Arc::new(self.matches.clone()),
             match_cursor: self.match_cursor,
+            date_short: self.date_short,
         };
 
         let body: AnyElement = if let Some(error) = &self.error {
@@ -1445,6 +1471,13 @@ impl GraphView {
                 )
             }
             "push" => self.run_op(|repo| git::push_current_branch(&repo.path), cx),
+            "resume-review" => {
+                if let Some(sha) = self.review.latest_commit()
+                    && let Some(index) = self.commits.iter().position(|commit| commit.sha == sha)
+                {
+                    self.select_row(RowKind::Commit(index), cx);
+                }
+            }
             "pr" => {
                 let branch = self.branch.clone().unwrap_or_default();
                 let base = self
@@ -1987,9 +2020,8 @@ impl GraphView {
                 .into_any_element()
         };
 
-        let items: Vec<AnyElement> = self
-            .branch_filter
-            .all
+        let branches = filter_by_globs(&self.branch_filter.all, &self.branch_globs);
+        let items: Vec<AnyElement> = branches
             .iter()
             .filter(|name| query.is_empty() || name.to_lowercase().contains(&query))
             .map(|name| {
@@ -2116,6 +2148,7 @@ impl GraphView {
             (date_label, self.date_mode == DateMode::Commit, "date"),
             ("Respect .mailmap", self.use_mailmap, "mailmap"),
             ("Include reflog commits", self.include_reflogs, "reflogs"),
+            ("Short date format", self.date_short, "date-short"),
             ("Show remote HEAD refs", self.show_remote_heads, "remote-heads"),
             ("Only tag commits", self.filter.only_tags, "only-tags"),
             ("Fetch: prune", self.fetch_prune, "fetch-prune"),
@@ -2162,6 +2195,7 @@ impl GraphView {
             ("Discovery depth −", "depth-minus"),
             ("Discovery depth +", "depth-plus"),
             ("Export configuration to .gitviz.conf", "export-config"),
+            ("Clear branch globs", "clear-globs"),
             ("End all code reviews", "end-reviews"),
         ] {
             let weak = weak.clone();
@@ -2482,6 +2516,8 @@ impl GraphView {
             }
             "fetch-prune" => self.fetch_prune = !self.fetch_prune,
             "fetch-prune-tags" => self.fetch_prune_tags = !self.fetch_prune_tags,
+            "date-short" => self.date_short = !self.date_short,
+            "clear-globs" => self.branch_globs.clear(),
             "ref-align" => {
                 self.ref_align = match self.ref_align {
                     RefAlign::Left => RefAlign::Right,
@@ -2791,6 +2827,7 @@ struct RowRenderContext {
     ref_align: RefAlign,
     matches: Arc<Vec<usize>>,
     match_cursor: usize,
+    date_short: bool,
 }
 
 impl RowRenderContext {
@@ -2938,6 +2975,7 @@ impl RowRenderContext {
             DateMode::Author => commit.author_date.clone(),
             DateMode::Commit => commit.commit_date.clone(),
         };
+        let date = format_date(&date, self.date_short);
 
         h_flex()
             .id(("commit", index))
@@ -3021,6 +3059,36 @@ impl RowRenderContext {
 }
 
 const LAYER_PREFIX: f32 = 24.0;
+
+fn parse_hex_color(value: &str) -> Option<gpui::Rgba> {
+    let hex = value.trim().trim_start_matches('#');
+    if hex.len() != 6 {
+        return None;
+    }
+    let red = u8::from_str_radix(&hex[0..2], 16).ok()? as u32;
+    let green = u8::from_str_radix(&hex[2..4], 16).ok()? as u32;
+    let blue = u8::from_str_radix(&hex[4..6], 16).ok()? as u32;
+    Some(gpui::rgb((red << 16) | (green << 8) | blue))
+}
+
+fn filter_by_globs(branches: &[String], globs: &[String]) -> Vec<String> {
+    if globs.is_empty() {
+        return branches.to_vec();
+    }
+    branches
+        .iter()
+        .filter(|branch| globs.iter().any(|pattern| glob_match(pattern, branch)))
+        .cloned()
+        .collect()
+}
+
+fn format_date(iso: &str, short: bool) -> String {
+    if short {
+        iso.chars().take(10).collect()
+    } else {
+        iso.to_string()
+    }
+}
 
 /// Minimal glob matching supporting `*` (any run) and `?` (one character).
 fn glob_match(pattern: &str, text: &str) -> bool {
@@ -3389,6 +3457,35 @@ mod tests {
         assert!(glob_match("main", "main"));
         assert!(glob_match("v?.*", "v1.2"));
         assert!(glob_match("*", "anything"));
+    }
+
+    #[test]
+    fn hex_colors_parse() {
+        assert!(parse_hex_color("#e06c75").is_some());
+        assert!(parse_hex_color("e06c75").is_some());
+        assert!(parse_hex_color("#fff").is_none());
+        assert!(parse_hex_color("nope").is_none());
+    }
+
+    #[test]
+    fn filters_branches_by_globs() {
+        let branches = vec![
+            "main".to_string(),
+            "heads/feature/login".to_string(),
+            "heads/fix/x".to_string(),
+        ];
+        assert_eq!(filter_by_globs(&branches, &[]), branches);
+        let filtered = filter_by_globs(&branches, &["heads/feature/*".to_string()]);
+        assert_eq!(filtered, vec!["heads/feature/login".to_string()]);
+    }
+
+    #[test]
+    fn short_date_format() {
+        assert_eq!(format_date("2024-05-01 10:00:00 +0000", true), "2024-05-01");
+        assert_eq!(
+            format_date("2024-05-01 10:00:00 +0000", false),
+            "2024-05-01 10:00:00 +0000"
+        );
     }
 
     #[test]

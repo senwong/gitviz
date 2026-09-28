@@ -23,6 +23,10 @@ pub struct RepoConfig {
     pub columns_author: bool,
     pub columns_commit: bool,
     pub repo_order: String,
+    /// Branch glob patterns (e.g. `heads/feature/*`); empty means show all.
+    pub branch_globs: Vec<String>,
+    /// Custom lane colours as `#rrggbb`; empty means use the built-in preset.
+    pub lane_colors: Vec<String>,
 }
 
 impl Default for RepoConfig {
@@ -43,6 +47,8 @@ impl Default for RepoConfig {
             columns_author: true,
             columns_commit: true,
             repo_order: "name".to_string(),
+            branch_globs: Vec::new(),
+            lane_colors: Vec::new(),
         }
     }
 }
@@ -82,6 +88,12 @@ impl RepoConfig {
                 "columns_author" => config.columns_author = flag,
                 "columns_commit" => config.columns_commit = flag,
                 "repo_order" => config.repo_order = value.to_string(),
+                "branch_globs" => {
+                    config.branch_globs = split_list(value);
+                }
+                "lane_colors" => {
+                    config.lane_colors = split_list(value);
+                }
                 _ => {}
             }
         }
@@ -109,9 +121,20 @@ impl RepoConfig {
             output.push_str(&format!("{key}={value}\n"));
         }
         output.push_str(&format!("repo_order={}\n", self.repo_order));
+        output.push_str(&format!("branch_globs={}\n", self.branch_globs.join(";")));
+        output.push_str(&format!("lane_colors={}\n", self.lane_colors.join(";")));
         std::fs::write(Self::path(repo), output)?;
         Ok(())
     }
+}
+
+fn split_list(value: &str) -> Vec<String> {
+    value
+        .split([';', ','])
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 #[cfg(test)]
@@ -131,12 +154,16 @@ mod tests {
         config.first_parent = true;
         config.emoji = false;
         config.repo_order = "path".to_string();
+        config.branch_globs = vec!["heads/feature/*".to_string(), "heads/fix/*".to_string()];
+        config.lane_colors = vec!["#e06c75".to_string(), "#61afef".to_string()];
         config.save(&dir).unwrap();
 
         let loaded = RepoConfig::load(&dir).unwrap();
         assert!(loaded.first_parent);
         assert!(!loaded.emoji);
         assert_eq!(loaded.repo_order, "path");
+        assert_eq!(loaded.branch_globs.len(), 2);
+        assert_eq!(loaded.lane_colors, vec!["#e06c75", "#61afef"]);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

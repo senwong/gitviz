@@ -48,6 +48,8 @@
 - 批次 9：接近底部自动加载更多（`should_load_more` 单测）、README 清单核对
 - 批次 10：同分支父子跳转（⌘↑/⌘↓，`find_parent_index`/`find_child_index` 单测）、未提交变更菜单 Stash/Discard（`discard_all` 集成测试）
 - 批次 11：分支过滤面板的 Checkout/Rename/Delete 与 Show All、glob 匹配纯函数（`glob_match` 单测）
+- 批次 12（A 项）：`.gitviz.conf` 支持 `branch_globs` 与自定义 `lane_colors`；分支按 glob 过滤、车道颜色自定义；短日期格式；命令面板“Resume last code review”；清空 globs。**新增 `parse_hex_color`/`filter_by_globs`/`format_date`/`ReviewStore::latest_commit` 单测、config 往返测试扩展**
+- 依赖调整：`gpui`/`gpui_platform` 改为 **git 依赖（固定上游 rev）**，gitviz 不再依赖任何本地仓库
 
 ## 文件结构
 

@@ -60,6 +60,15 @@ impl ReviewStore {
         }
     }
 
+    /// The commit SHA of the most recently reviewed file, if any.
+    pub fn latest_commit(&self) -> Option<String> {
+        self.entries
+            .iter()
+            .max_by_key(|(_, timestamp)| **timestamp)
+            .and_then(|(key, _)| key.split('\t').next())
+            .map(str::to_string)
+    }
+
     fn expire(&mut self) {
         let now = now();
         let before = self.entries.len();
@@ -102,4 +111,27 @@ fn now() -> u64 {
 fn config_path() -> Option<PathBuf> {
     let home = std::env::var_os("HOME")?;
     Some(PathBuf::from(home).join(".config/gitviz/reviews.tsv"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn latest_commit_picks_most_recent() {
+        let mut store = ReviewStore {
+            entries: HashMap::new(),
+            path: None,
+            dirty: false,
+        };
+        store.entries.insert("aaa\tfile1".to_string(), 100);
+        store.entries.insert("bbb\tfile2".to_string(), 200);
+        assert_eq!(store.latest_commit().as_deref(), Some("bbb"));
+    }
+
+    #[test]
+    fn latest_commit_is_none_when_empty() {
+        let store = ReviewStore::default();
+        assert_eq!(store.latest_commit(), None);
+    }
 }
