@@ -3211,9 +3211,18 @@ impl GraphView {
             .iter()
             .map(|path| {
                 let label = path.display().to_string();
+                let name = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| label.clone());
+                let parent = path
+                    .parent()
+                    .map(|parent| parent.display().to_string())
+                    .unwrap_or_default();
                 let target = path.clone();
                 let weak = weak.clone();
                 let text = theme.text;
+                let muted = theme.text_muted;
                 let hover = theme.hover;
                 h_flex()
                     .id(format!("welcome-recent-{label}"))
@@ -3221,13 +3230,22 @@ impl GraphView {
                     .px_3()
                     .py_1()
                     .gap_2()
+                    .items_center()
                     .cursor_pointer()
                     .hover(move |this| this.bg(hover))
                     .on_click(move |_: &ClickEvent, _window, cx| {
                         let target = target.clone();
                         weak.update(cx, |this, cx| this.open_recent(target, cx)).ok();
                     })
-                    .child(div().text_sm().text_color(text).child(label))
+                    .child(div().text_sm().text_color(text).child(name))
+                    .child(div().flex_1())
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(muted)
+                            .truncate()
+                            .child(parent),
+                    )
                     .into_any_element()
             })
             .collect();
@@ -3313,9 +3331,18 @@ impl GraphView {
             .map(|(index, path)| {
                 let is_selected = index == selected;
                 let label = path.display().to_string();
+                let name = path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| label.clone());
+                let parent = path
+                    .parent()
+                    .map(|parent| parent.display().to_string())
+                    .unwrap_or_default();
                 let target = path.clone();
                 let weak = weak.clone();
                 let text = theme.text;
+                let muted = theme.text_muted;
                 let hover = theme.hover;
                 let selected_bg = theme.selected;
                 let accent = theme.accent;
@@ -3324,6 +3351,8 @@ impl GraphView {
                     .w_full()
                     .px_3()
                     .py_1()
+                    .gap_2()
+                    .items_center()
                     .when(is_selected, |this| {
                         this.bg(selected_bg)
                             .border_l_2()
@@ -3335,7 +3364,9 @@ impl GraphView {
                         let target = target.clone();
                         weak.update(cx, |this, cx| this.open_recent(target, cx)).ok();
                     })
-                    .child(div().text_sm().text_color(text).child(label))
+                    .child(div().text_sm().text_color(text).child(name))
+                    .child(div().flex_1())
+                    .child(div().text_sm().text_color(muted).truncate().child(parent))
                     .into_any_element()
             })
             .collect();
