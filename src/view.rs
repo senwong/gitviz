@@ -3555,7 +3555,7 @@ impl GraphView {
                     .child(
                         div()
                             .id(format!("branch-toggle-{}", name))
-                            .text_color(if checked { theme.accent } else { theme.text_muted })
+                            .cursor_pointer()
                             .on_click(move |_: &ClickEvent, window, cx| {
                                 let _ = window;
                                 let name = name_toggle.clone();
@@ -3569,7 +3569,7 @@ impl GraphView {
                                     })
                                     .ok();
                             })
-                            .child(if checked { "[x]" } else { "[ ]" }),
+                            .child(checkbox(checked, &theme)),
                     )
                     .child(div().flex_1().text_color(theme.text).child(name.clone()))
                     .when_some(self.branch_tracking.get(name).copied(), |this, (ahead, behind)| {
@@ -4267,6 +4267,24 @@ fn action_button(
         .child(label)
 }
 
+/// A small check box.
+fn checkbox(checked: bool, theme: &Theme) -> AnyElement {
+    div()
+        .w(px(14.))
+        .h(px(14.))
+        .flex_none()
+        .rounded_sm()
+        .bg(if checked { theme.accent } else { theme.panel })
+        .border_1()
+        .border_color(if checked { theme.accent } else { theme.border })
+        .flex()
+        .items_center()
+        .justify_center()
+        .text_color(theme.bg)
+        .child(if checked { "✓" } else { "" })
+        .into_any_element()
+}
+
 /// A small on/off switch (static, no animation).
 fn toggle_switch(on: bool, theme: &Theme) -> AnyElement {
     let track = if on { theme.accent } else { theme.border };
@@ -4403,8 +4421,7 @@ fn render_file_row(
             this.child(
                 div()
                     .id(review_id)
-                    .text_sm()
-                    .text_color(if reviewed { theme.accent } else { theme.text_muted })
+                    .cursor_pointer()
                     .on_click(move |_: &ClickEvent, window, cx| {
                         let _ = window;
                         cx.stop_propagation();
@@ -4412,7 +4429,7 @@ fn render_file_row(
                             .update(cx, |this, cx| this.toggle_reviewed(&sha, &review_path, cx))
                             .ok();
                     })
-                    .child(if reviewed { "[x]" } else { "[ ]" }),
+                    .child(checkbox(reviewed, &theme)),
             )
         })
         .child(
