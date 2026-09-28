@@ -2536,7 +2536,7 @@ impl GraphView {
         };
 
         v_flex()
-            .w(px(440.))
+            .w(px(400.))
             .h_full()
             .bg(theme.panel)
             .border_l_1()
