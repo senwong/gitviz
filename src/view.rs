@@ -95,6 +95,7 @@ pub struct GraphView {
     detail_gen: u64,
     detail_loading: bool,
     caret_on: bool,
+    window_title: String,
     branch: Option<String>,
     commits: Arc<Vec<Commit>>,
     /// Max lane + 1, cached when rows are rebuilt (used to size the graph).
@@ -581,6 +582,7 @@ impl GraphView {
             detail_gen: 0,
             detail_loading: false,
             caret_on: true,
+            window_title: String::new(),
             branch: None,
             commits: Arc::new(Vec::new()),
             lane_count: 1,
@@ -2239,7 +2241,17 @@ impl Render for GraphView {
                 .into_any_element()
         };
 
-        let _ = window;
+        let title = match self.active_repo() {
+            Some(repo) => match &self.branch {
+                Some(branch) => format!("gitviz — {} ({branch})", repo.name),
+                None => format!("gitviz — {}", repo.name),
+            },
+            None => "gitviz".to_string(),
+        };
+        if title != self.window_title {
+            window.set_window_title(&title);
+            self.window_title = title;
+        }
 
         v_flex()
             .size_full()
