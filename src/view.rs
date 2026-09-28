@@ -2445,10 +2445,23 @@ impl Render for GraphView {
         };
 
         let title = match self.active_repo() {
-            Some(repo) => match &self.branch {
-                Some(branch) => format!("gitviz — {} ({branch})", repo.name),
-                None => format!("gitviz — {}", repo.name),
-            },
+            Some(repo) => {
+                let ambiguous = self
+                    .repos
+                    .iter()
+                    .filter(|other| other.name == repo.name)
+                    .count()
+                    > 1;
+                let label = if ambiguous {
+                    repo.path.display().to_string()
+                } else {
+                    repo.name.clone()
+                };
+                match &self.branch {
+                    Some(branch) => format!("gitviz — {label} ({branch})"),
+                    None => format!("gitviz — {label}"),
+                }
+            }
             None => "gitviz".to_string(),
         };
         if title != self.window_title {
