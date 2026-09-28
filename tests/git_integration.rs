@@ -271,3 +271,60 @@ fn remotes_are_readable() {
     assert_eq!(info.owner, "senwong");
     assert_eq!(info.repo, "gitviz");
 }
+
+#[test]
+fn edits_a_remote_url() {
+    let repo = TempRepo::new("seturl");
+    repo.commit("a.txt", "1\n", "one");
+
+    git::add_remote(&repo.path, "origin", "https://github.com/a/b.git").unwrap();
+    assert_eq!(
+        git::remote_url(&repo.path, "origin").as_deref(),
+        Some("https://github.com/a/b.git")
+    );
+
+    git::set_remote_url(&repo.path, "origin", "git@github.com:c/d.git").unwrap();
+    assert_eq!(
+        git::remote_url(&repo.path, "origin").as_deref(),
+        Some("git@github.com:c/d.git")
+    );
+}
+
+#[test]
+fn fetches_a_remote_branch_into_a_local_branch() {
+    let remote = TempRepo::new("fetchsrc");
+    remote.commit("a.txt", "1\n", "one");
+    git::create_branch(&remote.path, "release", None).unwrap();
+    remote.commit("b.txt", "2\n", "two");
+
+    let bare = std::env::temp_dir().join(format!(
+        "gitviz-it-bare-{}-{}",
+        std::process::id(),
+        nanos()
+    ));
+    let _ = std::fs::remove_dir_all(&bare);
+    let output = Command::new("git")
+        .args(["clone", "--bare", "-q"])
+        .arg(&remote.path)
+        .arg(&bare)
+        .output()
+        .expect("failed to clone --bare");
+    assert!(output.status.success());
+
+    let local = TempRepo::new("fetchdst");
+    git::add_remote(&local.path, "origin", bare.to_str().unwrap()).unwrap();
+    assert!(
+        !git::local_branches(&local.path)
+            .iter()
+            .any(|branch| branch == "local-release")
+    );
+
+    git::fetch_into_branch(&local.path, "origin", "release", "local-release").unwrap();
+    assert!(
+        git::local_branches(&local.path)
+            .iter()
+            .any(|branch| branch == "local-release")
+    );
+
+    let _ = std::fs::remove_dir_all(&bare);
+}

@@ -186,6 +186,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Resume last code review", "resume-review"),
     ("Stop reviewing this commit", "end-current-review"),
     ("Add branch glob…", "add-glob"),
+    ("Fetch into local branch…", "fetch-into"),
 ];
 
 fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
@@ -337,6 +338,8 @@ enum PromptAction {
     StashBranch,
     RenameBranch,
     AddGlob,
+    EditRemote,
+    FetchInto,
 }
 
 struct DiffView {
@@ -1267,6 +1270,31 @@ impl GraphView {
                 self.export_repo_config(cx);
                 self.load(cx);
             }
+            PromptAction::EditRemote => {
+                let remote = sha.clone();
+                self.run_op(move |repo| git::set_remote_url(&repo.path, &remote, &name), cx);
+            }
+            PromptAction::FetchInto => {
+                let mut parts = name.split_whitespace();
+                if let (Some(remote), Some(remote_branch), Some(local_branch)) =
+                    (parts.next(), parts.next(), parts.next())
+                {
+                    let remote = remote.to_string();
+                    let remote_branch = remote_branch.to_string();
+                    let local_branch = local_branch.to_string();
+                    self.run_op(
+                        move |repo| {
+                            git::fetch_into_branch(
+                                &repo.path,
+                                &remote,
+                                &remote_branch,
+                                &local_branch,
+                            )
+                        },
+                        cx,
+                    );
+                }
+            }
         }
     }
 
@@ -1681,6 +1709,15 @@ impl GraphView {
                     title: "Branch glob (e.g. heads/feature/*)".to_string(),
                     input: String::new(),
                     action: PromptAction::AddGlob,
+                    sha: String::new(),
+                });
+                cx.notify();
+            }
+            "fetch-into" => {
+                self.prompt = Some(Prompt {
+                    title: "Fetch into local branch (remote remote-branch local-branch)".to_string(),
+                    input: String::new(),
+                    action: PromptAction::FetchInto,
                     sha: String::new(),
                 });
                 cx.notify();
@@ -2502,6 +2539,7 @@ impl GraphView {
             ("Discovery depth +", "depth-plus"),
             ("Export configuration to .gitviz.conf", "export-config"),
             ("Add branch glob…", "add-glob"),
+            ("Fetch into local branch…", "fetch-into"),
             ("Clear branch globs", "clear-globs"),
             ("End all code reviews", "end-reviews"),
         ] {
@@ -2541,10 +2579,16 @@ impl GraphView {
             let weak_fetch = weak.clone();
             let weak_prune = weak.clone();
             let weak_remove = weak.clone();
+            let weak_edit = weak.clone();
             let theme_row = theme.clone();
             let name_fetch = name.clone();
             let name_prune = name.clone();
             let name_remove = name.clone();
+            let name_edit = name.clone();
+            let url_edit = self
+                .active_repo()
+                .and_then(|repo| git::remote_url(&repo.path, name))
+                .unwrap_or_default();
             items.push(
                 h_flex()
                     .id(format!("remote-{}", name))
@@ -2553,6 +2597,26 @@ impl GraphView {
                     .py_1()
                     .gap_2()
                     .child(div().flex_1().text_color(theme.text).child(name.clone()))
+                    .child(action_button(
+                        format!("remote-edit-{name}"),
+                        "Edit URL",
+                        &theme_row,
+                        move |cx| {
+                            let remote = name_edit.clone();
+                            let input = url_edit.clone();
+                            weak_edit
+                                .update(cx, |this, cx| {
+                                    this.prompt = Some(Prompt {
+                                        title: format!("URL for remote {remote}"),
+                                        input,
+                                        action: PromptAction::EditRemote,
+                                        sha: remote,
+                                    });
+                                    cx.notify();
+                                })
+                                .ok();
+                        },
+                    ))
                     .child(action_button(
                         format!("remote-fetch-{name}"),
                         "Fetch",
@@ -2832,6 +2896,14 @@ impl GraphView {
                     title: "Branch glob (e.g. heads/feature/*)".to_string(),
                     input: String::new(),
                     action: PromptAction::AddGlob,
+                    sha: String::new(),
+                });
+            }
+            "fetch-into" => {
+                self.prompt = Some(Prompt {
+                    title: "Fetch into local branch (remote remote-branch local-branch)".to_string(),
+                    input: String::new(),
+                    action: PromptAction::FetchInto,
                     sha: String::new(),
                 });
             }

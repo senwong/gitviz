@@ -597,6 +597,31 @@ pub fn remove_remote(repo: &Path, name: &str) -> anyhow::Result<()> {
     run(repo, &["remote", "remove", name]).map(|_| ())
 }
 
+pub fn set_remote_url(repo: &Path, name: &str, url: &str) -> anyhow::Result<()> {
+    run(repo, &["remote", "set-url", name, url]).map(|_| ())
+}
+
+/// Git arguments that update a local branch from a remote branch without
+/// checking it out: `git fetch <remote> <remote_branch>:<local_branch>`.
+pub fn fetch_into_args(remote: &str, remote_branch: &str, local_branch: &str) -> Vec<String> {
+    vec![
+        "fetch".to_string(),
+        remote.to_string(),
+        format!("{remote_branch}:{local_branch}"),
+    ]
+}
+
+pub fn fetch_into_branch(
+    repo: &Path,
+    remote: &str,
+    remote_branch: &str,
+    local_branch: &str,
+) -> anyhow::Result<()> {
+    let args = fetch_into_args(remote, remote_branch, local_branch);
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run(repo, &refs).map(|_| ())
+}
+
 pub fn prune_remote(repo: &Path, name: &str) -> anyhow::Result<()> {
     run(repo, &["remote", "prune", name]).map(|_| ())
 }
@@ -886,6 +911,18 @@ mod tests {
     fn push_force_flag_only_when_forced() {
         assert_eq!(push_force_flag(false), None);
         assert_eq!(push_force_flag(true), Some("--force-with-lease"));
+    }
+
+    #[test]
+    fn fetch_into_args_map_remote_to_local() {
+        assert_eq!(
+            fetch_into_args("origin", "main", "main"),
+            vec!["fetch", "origin", "main:main"]
+        );
+        assert_eq!(
+            fetch_into_args("upstream", "develop", "local-dev"),
+            vec!["fetch", "upstream", "develop:local-dev"]
+        );
     }
 }
 
