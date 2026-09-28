@@ -25,15 +25,15 @@
 
 ## 当前状态（务必先看）
 
-- **非 UI 逻辑已验证**：把 `config/discovery/emoji/git/layout/markdown/review` 抽到一个临时 crate（不含 gpui）跑测试，**35 个单测 + 20 个集成测试全部通过**（含 `git log` 正文解析、stash 详情、fetch into branch、pull、annotated tag、单文件 discard、工作区对比、stashes_containing、新 `row_segments`、review 等）。UI（`view.rs`/`theme.rs`）仍未编译。
-- **代码约 6000+ 行，UI 部分从未编译过。** 第一次 `cargo check` 仍需修一批错误（已按 pinned gpui rev 做过静态核对，见下）。
+- **已编译通过并全部测试通过（2026-09-28）**：`./script/build check --all-targets` 无错误/警告；`./script/build test` = **64 单测 + 23 集成（87）全部通过**；`./script/build build` 产出 `target/debug/gitviz` 并能启动。
+- 非 UI 逻辑也可用 `./script/pure-test` 快速验证。
 - 最新提交：
   ```
-  cbb0dfc Add custom issue URL template and use custom providers in detail actions
-  3027beb Fix pull integration test to set up an unborn branch
-  abe2e6d Add tests for URL/issue extraction and ref combining
-  9cf5dbe Fix gpui API usage found by static review against pinned rev
-  52d6196 Expose pull current branch
+  de314d6 Fix remaining compile errors so the UI builds cleanly
+  5e882d4 Fix use-after-move of weak handle in render header
+  396f6b8 Shrink dev build artifacts (no debug info, no incremental)
+  58b1551 Commit Cargo.lock (dependencies fetched)
+  2569469 Make script/build executable
   ```
 
 ### 已写但未编译的批次
@@ -99,42 +99,31 @@ PROGRESS.md         本文件
 
 ## 下一步（建议顺序）
 
-1. **集中 build 修错（最高优先级）**
-   ```sh
-   cd ~/projects/gitviz
-   ./script/build check
-   ```
-   反复修到通过；再 `./script/build run -- ~/projects/jp-cms ~/projects/umu_node` 手动验证。
-2. 修完后按 README 清单继续补功能（见下）。
+1. **已编译通过（2026-09-28）**：`./script/build check --all-targets` 无错误；`./script/build test` 全部通过（**64 单测 + 23 集成 = 87**）；`./script/build build` 产出 `target/debug/gitviz`（36M）并能启动。
+2. 继续按 README 清单补功能 / 打磨 UI（见下）。
 
-## 编译时预计要修的点（build pass checklist）
+## 编译情况（build pass，已完成）
 
-- [ ] `uniform_list` 闭包签名（`Fn(Range, &mut Window, &mut App)`）与 `'static` 捕获
-- [ ] `gpui::canvas(prepaint, paint)` 的 prepaint/paint 形参与返回值
-- [ ] `PathBuilder::stroke/move_to/line_to/curve_to/build` 与 `Window::paint_path`
-- [ ] `.hover(...)` 的接收者类型（`StyleRefinement` vs 元素）
-- [ ] 颜色类型：`Theme` 用的是 `gpui::Rgba`（`rgb()`），与 `.text_color()/.bg()` 的 `Into` 是否匹配
-- [ ] `Min/Max` 等 sizing 简写是否存在：`min_w_0 / min_h_0 / h / w / px`
-- [ ] `ElementId`：`("id", usize)`、`String`（`impl Into<ElementId>`）
-- [ ] `WeakEntity::update(cx, ...)` 在 `&mut App` 下的用法
-- [ ] `App::quit()`、`MouseDownEvent.modifiers.secondary()`（已确认存在，注意用法）
-- [ ] `span_element` 内局部变量命名与 trait 名冲突（改名为 `node`）
-- [ ] 借用/生命周期错误（`self` 不可变借用 + `self.xxx = ...` 赋值处）
-- [ ] `git.rs` 里 `line.get(3..)`、`--date=iso` 输出解析
-- [ ] `let ... && let ...`（let-chains）在 edition 2024 下应可用，若报错改成嵌套 `if`
+`view.rs` 第一次编译共修 12 处错误（脚本已跑通）：
 
-## 待办 backlog（按 README 清单）
+- [x] `ResizeColumn` 重复 `#[derive(Clone, Copy)]`
+- [x] `LogFilter` 初始化缺 `full_refs` 字段
+- [x] `ElementId`：`("command", &str)` / `("menu", String)` 不能靠 `Into` 自动转换 → 改成 `id` 或 `format!` 生成的 `String`
+- [x] `status_letter(file.status, theme)` 需要 `&theme`
+- [x] `action_button` 的 `Fn` 闭包里对 `name_fetch`/`name_prune`/`name_remove` 的 `move` 捕获 → 在闭包内 `clone()`
+- [x] 文件行审查闭包借用 `file.path` 逃逸 → 预先 `clone()` 成 `review_path`
+- [x] 渲染 header 时最后一个 `chip(...)` 把 `weak` move 掉，后面又用 → 改为 `weak.clone()`
+- [x] `h_flex`/`v_flex` 不在 gpui（在 zed 的 `ui` crate）→ `view.rs` 内自定义
+- [x] `overflow_y_scroll` 属于 `StatefulInteractiveElement` → 可滚动列表都加了唯一 `id`
+- [x] `main.rs` 调用 `cx.new` 需要 `use gpui::AppContext as _;`
 
-- [ ] 列宽拖拽、graph style / 自定义颜色、reference label 对齐/合并细节
-- [ ] 代码审查的**持久化**（当前仅内存）+ 90 天自动过期 + 工作区级命令
-- [ ] 打开文件当前版本、复制文件路径、提交正文 URL 可点击
-- [ ] reflog / remote-head / tag-only 提交的入口开关（git 层已部分支持）
-- [ ] 头像抓取（可选）
-- [ ] 仓库下拉顺序（Cmd+P 已有）
-- [ ] 配置导出到仓库文件
-- [ ] 状态栏入口 / 命令面板命令（standalone 环境下等价物）
-- [ ] 提交 drop、annotated tag 详情、签名验证细节
-- [ ] 悬浮 tooltip：包含该提交的分支/标签/stash
+## 待办 backlog
+
+功能已基本对齐 vscode-git-graph（见 README 清单）。剩余可选：
+
+- [ ] 网络头像（需要给 `Application` 配置 `AssetSource` + http client，工作量较大）
+- [ ] 自定义 Pull Request provider 的图形化配置（当前走 `.gitviz.conf`）
+- [ ] 更多键盘快捷键可配置化
 
 ## 测试
 
@@ -146,13 +135,15 @@ PROGRESS.md         本文件
   - `git.rs`：`parse_remote`（GitHub/GitLab/Bitbucket、未知 host）、`urlencode`
 - **集成测试**（`tests/git_integration.rs`）：在临时目录 `git init` 真实仓库，跑 log/status/branches/tag/stash/commit_detail/remotes。
 - 为支持集成测试，新增了 `src/lib.rs`（lib target），`main.rs` 改为引用 `gitviz::...`。
-- **快速验证（不需要 gpui，很快）**：`./script/pure-test` 会把纯逻辑模块（config/discovery/emoji/git/layout/markdown/review）复制进一个临时 crate 并跑测试。目前 **39 单测 + 23 集成测试全部通过**。
-- 全量（含 UI，需要 gpui）：
+- **快速验证（不需要 gpui，很快）**：`./script/pure-test` 会把纯逻辑模块（config/discovery/emoji/git/layout/markdown/review）复制进一个临时 crate 并跑测试。
+- 全量（含 UI）：
   ```sh
-  ./script/build test
-  ./script/build test --test git_integration
+  ./script/build test                    # 64 单测 + 23 集成，全部通过
+  ./script/build check --all-targets     # 无错误/警告
+  ./script/build build                   # 产出 target/debug/gitviz
+  ./script/build run -- ~/projects/a ~/projects/b
   ```
-- **UI 部分（view.rs/theme.rs）仍未编译**；第一次 `./script/build check` 后用 `./script/build test` 验证全部。
+- **编译状态**：`view.rs`/`theme.rs` 已编译通过（2026-09-28），二进制可启动。
 
 ## 快速上手（给接棒的自己）
 

@@ -75,16 +75,16 @@ script/build       cargo 包装脚本
 
 ## 状态与已知限制
 
-- **尚未编译验证。** 代码是先按功能成批写完的，第一次 `cargo check` / `test` 仍可能
-  需要修正若干 `gpui` API 细节（元素方法名、`KeyDownEvent` 字段、canvas/paint API、颜色类型等）。
+- **已编译通过，测试通过（87 项）**：`./script/build check --all-targets` 无错误/警告，`./script/build test` = 64 单测 + 23 集成全部通过，`./script/build build` 产出可启动的 `target/debug/gitviz`。
 - 已实现：lane 连线（rounded / angular）、提交详情与 diff、写操作（checkout / cherry-pick /
   merge / rebase / reset / revert / drop / push / fetch / pull / tag / stash）、
   过滤器与搜索、深浅主题、代码审查、多仓库等（见下方“功能对齐”清单）。
+- 暂未实现：网络头像（需要给 `Application` 配置 `AssetSource` 与 http client）。
 
 ## 路线图
 
-1. 编译跑通并修掉遗留问题（`./script/build check` → `./script/build test`）
-2. 按下方“功能对齐 mhutchie/vscode-git-graph”清单继续补齐细节
+1. ~~编译跑通~~（已完成）
+2. 按下方“功能对齐 mhutchie/vscode-git-graph”清单继续补齐可选细节（网络头像等）
 
 ## 功能对齐 mhutchie/vscode-git-graph
 
