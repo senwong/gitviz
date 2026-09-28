@@ -2069,6 +2069,7 @@ impl GraphView {
             .map(|tag| {
                 let name_push = tag.name.clone();
                 let name_delete = tag.name.clone();
+                let name_copy = tag.name.clone();
                 let weak_push = weak.clone();
                 let weak_delete = weak.clone();
                 let theme_row = theme.clone();
@@ -2091,6 +2092,16 @@ impl GraphView {
                                     .child(format!("tag {}", tag.name)),
                             )
                             .child(div().flex_1())
+                            .child(action_button(
+                                format!("tag-copy-{}", tag.name),
+                                "Copy",
+                                &theme_row,
+                                move |cx| {
+                                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                        name_copy.clone(),
+                                    ));
+                                },
+                            ))
                             .child(action_button(
                                 format!("tag-push-{}", tag.name),
                                 "Push",
@@ -2215,6 +2226,20 @@ impl GraphView {
             })
             .into_any_element(),
         );
+
+        let email_for_copy = self
+            .detail
+            .as_ref()
+            .map(|detail| detail.email.clone())
+            .unwrap_or_default();
+        if !email_for_copy.is_empty() {
+            buttons.push(
+                action_button("copy-email", "Copy Email", &theme, move |cx| {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(email_for_copy.clone()));
+                })
+                .into_any_element(),
+            );
+        }
 
         if let Some(info) = remote {
             let url = info.commit_url(&sha_string);
