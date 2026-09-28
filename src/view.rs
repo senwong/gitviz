@@ -96,6 +96,7 @@ pub struct GraphView {
     detail_loading: bool,
     caret_on: bool,
     window_title: String,
+    scrollbar_drag: bool,
     branch: Option<String>,
     commits: Arc<Vec<Commit>>,
     /// Max lane + 1, cached when rows are rebuilt (used to size the graph).
@@ -588,6 +589,7 @@ impl GraphView {
             detail_loading: false,
             caret_on: true,
             window_title: String::new(),
+            scrollbar_drag: false,
             branch: None,
             commits: Arc::new(Vec::new()),
             lane_count: 1,
@@ -1444,12 +1446,51 @@ impl GraphView {
 
     // -- overlays ---------------------------------------------------------
 
+    /// The scroll offset (pixels) for a window-space y position, using the
+    /// scrollbar thumb as a handle.
+    fn scrollbar_offset_for_y(&self, window_y: f32) -> f32 {
+        let viewport = self.list_state.viewport_bounds();
+        let height = viewport.size.height.as_f32();
+        let max = self.list_state.max_offset_for_scrollbar().y.as_f32();
+        let (_, thumb_height) = scrollbar_thumb(
+            (-self.list_state.scroll_px_offset_for_scrollbar().y)
+                .as_f32()
+                .clamp(0., max),
+            max,
+            height,
+        );
+        let local_y = window_y - viewport.origin.y.as_f32();
+        let track = (height - thumb_height).max(1.);
+        (((local_y - thumb_height / 2.) / track).clamp(0., 1.)) * max
+    }
+
+    fn start_scrollbar_drag(
+        &mut self,
+        event: &MouseDownEvent,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.scrollbar_drag = true;
+        self.list_state.scrollbar_drag_started();
+        let offset = self.scrollbar_offset_for_y(event.position.y.as_f32());
+        self.list_state
+            .set_offset_from_scrollbar(point(px(0.), px(-offset)));
+        cx.notify();
+    }
+
     fn on_mouse_move(
         &mut self,
         event: &gpui::MouseMoveEvent,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.scrollbar_drag {
+            let offset = self.scrollbar_offset_for_y(event.position.y.as_f32());
+            self.list_state
+                .set_offset_from_scrollbar(point(px(0.), px(-offset)));
+            cx.notify();
+            return;
+        }
         let Some((column, start_x, start_width)) = self
             .resize_drag
             .as_ref()
@@ -1472,6 +1513,11 @@ impl GraphView {
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.scrollbar_drag {
+            self.scrollbar_drag = false;
+            self.list_state.scrollbar_drag_ended();
+            cx.notify();
+        }
         if self.resize_drag.take().is_some() {
             cx.notify();
         }
@@ -2275,7 +2321,7 @@ impl Render for GraphView {
                         .min_h_0()
                         .w_full()
                         .child(body)
-                        .child(self.render_scrollbar())
+                        .child(self.render_scrollbar(cx))
                         .when_some(detail, |this, detail| this.child(detail)),
                 )
                 .child(self.render_footer())
@@ -4718,7 +4764,7 @@ impl GraphView {
     }
 
     /// A thin scrollbar for the commit list (gpui's `list` does not draw one).
-    fn render_scrollbar(&self) -> AnyElement {
+    fn render_scrollbar(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.clone();
         let max_offset = self.list_state.max_offset_for_scrollbar().y;
         if max_offset <= px(0.) {
@@ -4733,10 +4779,16 @@ impl GraphView {
         let thumb_color = theme.border;
         let thumb_hover = theme.text_muted;
         div()
+            .id("commit-scrollbar")
             .w(px(10.))
             .h_full()
             .flex_none()
             .relative()
+            .cursor_pointer()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(Self::start_scrollbar_drag),
+            )
             .child(
                 div()
                     .absolute()
