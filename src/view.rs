@@ -366,6 +366,7 @@ enum MenuAction {
     Push,
     CopySha,
     CopyMessage,
+    CopyRef,
     StashApply,
     StashPop,
     StashDrop,
@@ -408,6 +409,7 @@ impl MenuAction {
             MenuAction::Push => "Push Branch",
             MenuAction::CopySha => "Copy SHA",
             MenuAction::CopyMessage => "Copy Commit Message",
+            MenuAction::CopyRef => "Copy Stash Reference",
             MenuAction::StashApply => "Apply Stash",
             MenuAction::StashPop => "Pop Stash",
             MenuAction::StashDrop => "Drop Stash",
@@ -437,6 +439,7 @@ impl MenuAction {
             MenuAction::Push => "push",
             MenuAction::CopySha => "copy-sha",
             MenuAction::CopyMessage => "copy-message",
+            MenuAction::CopyRef => "copy-ref",
             MenuAction::StashApply => "stash-apply",
             MenuAction::StashPop => "stash-pop",
             MenuAction::StashDrop => "stash-drop",
@@ -1334,6 +1337,7 @@ impl GraphView {
                     MenuAction::StashPop,
                     MenuAction::StashDrop,
                     MenuAction::StashBranch,
+                    MenuAction::CopyRef,
                 ],
             ),
             RowKind::Uncommitted => (
@@ -1434,6 +1438,11 @@ impl GraphView {
                         sha: index.to_string(),
                     });
                     cx.notify();
+                }
+                MenuAction::CopyRef => {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(format!(
+                        "stash@{{{index}}}"
+                    )));
                 }
                 _ => {}
             },
@@ -1756,6 +1765,7 @@ impl GraphView {
         };
         let sha = self.detail_sha.clone().unwrap_or_default();
         let comparing = self.compare.is_some();
+        let review_active = !comparing && self.review.has_commit(&sha);
 
         let files: Vec<AnyElement> = if comparing {
             self.compare_files
@@ -1785,7 +1795,7 @@ impl GraphView {
                                 &row.name,
                                 &weak,
                                 &theme,
-                                Some((sha.clone(), reviewed)),
+                                Some((sha.clone(), reviewed, review_active)),
                             ),
                         )
                     }
@@ -1797,7 +1807,13 @@ impl GraphView {
                 .iter()
                 .map(|file| {
                     let reviewed = self.review.is_reviewed(&format!("{sha}\t{}", file.path));
-                    render_file_row(file, &file.path, &weak, &theme, Some((sha.clone(), reviewed)))
+                    render_file_row(
+                        file,
+                        &file.path,
+                        &weak,
+                        &theme,
+                        Some((sha.clone(), reviewed, review_active)),
+                    )
                 })
                 .collect()
         };
@@ -2367,6 +2383,7 @@ impl GraphView {
                 let name_co = name.clone();
                 let name_rn = name.clone();
                 let name_del = name.clone();
+                let name_copy = name.clone();
                 let weak_toggle = weak.clone();
                 let weak_co = weak.clone();
                 let weak_rn = weak.clone();
@@ -2398,6 +2415,16 @@ impl GraphView {
                             .child(if checked { "[x]" } else { "[ ]" }),
                     )
                     .child(div().flex_1().text_color(theme.text).child(name.clone()))
+                    .child(action_button(
+                        format!("branch-copy-{}", name),
+                        "Copy",
+                        &theme_row,
+                        move |cx| {
+                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                name_copy.clone(),
+                            ));
+                        },
+                    ))
                     .child(action_button(
                         format!("branch-co-{}", name),
                         "Checkout",
@@ -2977,7 +3004,7 @@ fn render_file_row(
     display: &str,
     weak: &gpui::WeakEntity<GraphView>,
     theme: &Theme,
-    review: Option<(String, bool)>,
+    review: Option<(String, bool, bool)>,
 ) -> AnyElement {
     let path = file.path.clone();
     let weak_click = weak.clone();
@@ -2989,7 +3016,8 @@ fn render_file_row(
     let path_open = file.path.clone();
     let path_rev = file.path.clone();
     let theme = theme.clone();
-    let (sha, reviewed) = review.map(|(sha, reviewed)| (sha, reviewed)).unwrap_or_default();
+    let (sha, reviewed, review_active) = review.unwrap_or_default();
+    let needs_review = review_active && !reviewed;
     h_flex()
         .id(format!("file-{}", file.path))
         .w_full()
@@ -3011,6 +3039,7 @@ fn render_file_row(
                 .truncate()
                 .text_sm()
                 .text_color(theme.text)
+                .when(needs_review, |this| this.font_weight(gpui::FontWeight::BOLD))
                 .child(display.to_string()),
         )
         .child(
@@ -3110,7 +3139,18 @@ impl GraphView {
                 title,
                 text: Arc::new(text),
             });
+            self.mark_reviewed_if_active(&sha, path);
             cx.notify();
+        }
+    }
+
+    /// In an ongoing code review, viewing a file marks it as reviewed so it is
+    /// no longer shown in bold.
+    fn mark_reviewed_if_active(&mut self, sha: &str, path: &str) {
+        let key = format!("{sha}\t{path}");
+        if self.review.has_commit(sha) && !self.review.is_reviewed(&key) {
+            self.review.mark(&key);
+            self.review.save();
         }
     }
 
@@ -3121,6 +3161,9 @@ impl GraphView {
     fn open_file(&mut self, path: &str, _cx: &mut Context<Self>) {
         if let Some(repo) = self.active_repo().cloned() {
             let _ = git::open_path(&repo.path.join(path));
+            if let Some(sha) = self.detail_sha.clone() {
+                self.mark_reviewed_if_active(&sha, path);
+            }
         }
     }
 
@@ -3140,6 +3183,7 @@ impl GraphView {
         let target = dir.join(file_name);
         if std::fs::write(&target, content).is_ok() {
             let _ = git::open_path(&target);
+            self.mark_reviewed_if_active(&sha, path);
         }
     }
 

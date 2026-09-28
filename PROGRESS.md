@@ -56,6 +56,7 @@
 - 批次 16（A 项）：**自定义 emoji 映射**（`.gitviz.conf` 的 `emoji_mappings=code:emoji`，`emoji::replace_with` 先自定义后内置）、**停止当前提交的代码审查**（命令面板 `end-current-review` + `ReviewStore::remove_commit`）。**新增 `replace_with`/`remove_commit` 单测、config 往返扩展**
 - 批次 17（A 项）：**graph style（rounded / angular）** 与 **分支 glob 的 UI 入口**。`layout::GraphStyle` + `layout::row_segments`（把每行连线抽成可测的纯函数 `Segment`/`SegmentKind`），绘制改用该纯函数；`.gitviz.conf` 新增 `graph_style`；设置面板新增 “Angular graph connectors”；命令面板/设置新增 “Add branch glob…”（提示输入后写入配置并重载）。**新增 `row_segments`/`GraphStyle::parse`/`parse_emoji_mappings` 单测、config 往返扩展**
 - 批次 18（A 项）：**remote URL 编辑**（`git remote set-url`，设置面板 “Edit URL” → 提示框预填当前 URL）与 **Fetch into Local Branch**（`git fetch <remote> <rb>:<lb>`，命令面板/设置 “Fetch into local branch…”）。**新增 `fetch_into_args` 单测、`set_remote_url`/`fetch_into_branch` 集成测试**
+- 批次 19（A 项）：**代码审查的加粗/去粗**（未看文件加粗，打开 diff / Open / Rev 后 `ReviewStore::mark` 自动标记并去粗，`has_commit` 判定审查是否进行中）；**复制 ref 名**（stash 菜单 “Copy Stash Reference”、分支面板 “Copy”）。**新增 `ReviewStore::mark`/`has_commit` 单测**
 
 ## 文件结构
 

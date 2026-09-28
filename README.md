@@ -112,8 +112,8 @@ script/build       cargo 包装脚本
   - [x] Cmd/Ctrl 点击第二个提交进入对比，列出差异文件
   - [x] 对比视图打开文件 diff
 - 代码审查（Code Review）
-  - [x] 已审查文件标记（`[x]`/`[ ]`）
-  - [x] 持久化 + 90 天过期；[~] 工作区级命令（End all）
+  - [x] 已审查文件标记（`[x]`/`[ ]`）；进行中的审查中，未看文件加粗，查看 diff / 打开文件后自动去掉加粗
+  - [x] 持久化 + 90 天过期；工作区级命令（End all / 停止当前提交）
 - 未提交变更
   - [x] 显示与选择、查看文件列表
   - [x] Stash 操作（push/apply/pop/drop/branch）+ 未提交变更的 Stash/Discard

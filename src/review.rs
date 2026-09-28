@@ -53,6 +53,20 @@ impl ReviewStore {
         self.dirty = true;
     }
 
+    /// Marks `key` as reviewed (idempotent).
+    pub fn mark(&mut self, key: &str) {
+        if !self.entries.contains_key(key) {
+            self.entries.insert(key.to_string(), now());
+            self.dirty = true;
+        }
+    }
+
+    /// Whether any file of `sha` is currently being reviewed.
+    pub fn has_commit(&self, sha: &str) -> bool {
+        let prefix = format!("{sha}\t");
+        self.entries.keys().any(|key| key.starts_with(&prefix))
+    }
+
     pub fn end_all(&mut self) {
         if !self.entries.is_empty() {
             self.entries.clear();
@@ -154,5 +168,17 @@ mod tests {
         store.remove_commit("aaa");
         assert_eq!(store.entries.len(), 1);
         assert!(store.entries.contains_key("bbb\tf3"));
+    }
+
+    #[test]
+    fn mark_is_idempotent_and_has_commit_scopes_to_sha() {
+        let mut store = ReviewStore::default();
+        assert!(!store.has_commit("aaa"));
+        store.mark("aaa\tf1");
+        store.mark("aaa\tf1");
+        assert!(store.is_reviewed("aaa\tf1"));
+        assert!(store.has_commit("aaa"));
+        assert!(!store.has_commit("bbb"));
+        assert_eq!(store.entries.len(), 1);
     }
 }
