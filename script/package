@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+#
+# Build a release macOS `.app` bundle and a DMG for gitviz.
+#
+# Usage:
+#   script/package [-n NAME] [-b BUNDLE_ID] [-v VERSION] [-d] [-s] [-o OUT_DIR]
+#
+# Options:
+#   -n NAME        App name. Default: gitviz
+#   -b BUNDLE_ID   Bundle identifier. Default: dev.senwong.<name lowercased>
+#   -v VERSION     CFBundleShortVersionString / CFBundleVersion. Default: 0.1.0
+#   -d             Build the debug profile instead of release.
+#   -s             Skip building; package the existing binary in target/<profile>.
+#   -o OUT_DIR     Where to write the .app and .dmg. Default: repository root.
+#   -h             Show help.
+
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+name="gitviz"
+bundle_id=""
+version="0.1.0"
+out_dir="$repo_root"
+debug=false
+skip_build=false
+
+while getopts 'n:b:v:dso:h' flag; do
+    case "${flag}" in
+        n) name="$OPTARG" ;;
+        b) bundle_id="$OPTARG" ;;
+        v) version="$OPTARG" ;;
+        d) debug=true ;;
+        s) skip_build=true ;;
+        o) out_dir="$OPTARG" ;;
+        h)
+            sed -n '2,18p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        *) exit 1 ;;
+    esac
+done
+
+for tool in codesign hdiutil; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        echo "error: $tool is required (macOS only)" >&2
+        exit 1
+    fi
+done
+
+if [ -z "$bundle_id" ]; then
+    slug="$(printf '%s' "$name" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+    bundle_id="dev.senwong.$slug"
+fi
+
+if [ "$debug" = true ]; then
+    build_flag=""
+    target_dir="debug"
+else
+    build_flag="--release"
+    target_dir="release"
+    export CARGO_PROFILE_RELEASE_DEBUG=0
+    export CARGO_PROFILE_RELEASE_STRIP=symbols
+fi
+
+binary="$repo_root/target/$target_dir/gitviz"
+if [ "$skip_build" = true ]; then
+    echo "==> Skipping build, using existing $binary"
+else
+    echo "==> Building gitviz ($target_dir)"
+    "$repo_root/script/build" build $build_flag
+fi
+
+if [ ! -f "$binary" ]; then
+    echo "error: expected binary at $binary" >&2
+    exit 1
+fi
+
+app_path="$out_dir/$name.app"
+dmg_path="$out_dir/$name.dmg"
+
+echo "==> Assembling $app_path"
+rm -rf "$app_path"
+mkdir -p "$app_path/Contents/MacOS" "$app_path/Contents/Resources"
+cp "$binary" "$app_path/Contents/MacOS/$name"
+chmod +x "$app_path/Contents/MacOS/$name"
+
+cat > "$app_path/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>$name</string>
+    <key>CFBundleExecutable</key>
+    <string>$name</string>
+    <key>CFBundleIdentifier</key>
+    <string>$bundle_id</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$name</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$version</string>
+    <key>CFBundleVersion</key>
+    <string>$version</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>MacOSX</string>
+    </array>
+</dict>
+</plist>
+PLIST
+
+echo "==> Ad-hoc signing"
+codesign --force --deep --sign - "$app_path" >/dev/null
+codesign --verify --deep --strict "$app_path"
+
+echo "==> Creating DMG"
+rm -f "$dmg_path"
+# Create directly from the .app; a /var/folders staging dir can trip
+# "hdiutil: create failed - Resource busy" on some systems.
+hdiutil create -volname "$name" -srcfolder "$app_path" -ov -format UDZO "$dmg_path" >/dev/null
+
+echo
+echo "Done:"
+echo "  app: $app_path"
+echo "  dmg: $dmg_path"

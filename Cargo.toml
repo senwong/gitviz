@@ -30,3 +30,7 @@ incremental = false
 
 [profile.dev.package."*"]
 debug = false
+
+[profile.release]
+strip = true
+incremental = false

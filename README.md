@@ -45,6 +45,22 @@ cd ~/projects/gitviz
 ./script/build build --release
 ```
 
+## 打包 macOS .app / DMG
+
+```sh
+# 构建 release，组装 gitviz.app，ad-hoc 签名，并生成 gitviz.dmg
+./script/package
+
+# 跳过编译，只打包 target/release/gitviz
+./script/package -s
+
+# 自定义名字 / 输出目录
+./script/package -n GitViz -o ~/projects
+```
+
+产物：`gitviz.app` 和 `gitviz.dmg`（默认放仓库根目录）。`.app` 用 ad-hoc 签名，
+首次打开如被 Gatekeeper 拦截，可在「系统设置 → 隐私与安全性」里允许，或右键 → 打开。
+
 ## 快捷键
 
 | 快捷键 | 作用 |
