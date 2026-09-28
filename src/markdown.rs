@@ -106,3 +106,51 @@ fn find_n(chars: &[char], from: usize, target: char, count: usize) -> Option<usi
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn styles(line: &str) -> Vec<(String, SpanStyle)> {
+        parse_line(line)
+            .into_iter()
+            .map(|span| (span.text, span.style))
+            .collect()
+    }
+
+    #[test]
+    fn plain_text() {
+        assert_eq!(styles("hello"), vec![("hello".to_string(), SpanStyle::Normal)]);
+    }
+
+    #[test]
+    fn bold_italic_code() {
+        assert_eq!(styles("**hi**"), vec![("hi".to_string(), SpanStyle::Bold)]);
+        assert_eq!(styles("*hi*"), vec![("hi".to_string(), SpanStyle::Italic)]);
+        assert_eq!(
+            styles("***hi***"),
+            vec![("hi".to_string(), SpanStyle::BoldItalic)]
+        );
+        assert_eq!(styles("`x`"), vec![("x".to_string(), SpanStyle::Code)]);
+    }
+
+    #[test]
+    fn mixed_line() {
+        assert_eq!(
+            styles("a **b** c"),
+            vec![
+                ("a ".to_string(), SpanStyle::Normal),
+                ("b".to_string(), SpanStyle::Bold),
+                (" c".to_string(), SpanStyle::Normal),
+            ]
+        );
+    }
+
+    #[test]
+    fn underscore_inside_word_is_literal() {
+        assert_eq!(
+            styles("foo_bar"),
+            vec![("foo_bar".to_string(), SpanStyle::Normal)]
+        );
+    }
+}

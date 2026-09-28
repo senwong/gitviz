@@ -72,6 +72,14 @@ pub struct GraphView {
     detail: Option<CommitDetail>,
     detail_sha: Option<String>,
     compare_files: Vec<ChangedFile>,
+    tags: Vec<git::TagDetail>,
+    file_tree: bool,
+    compact_folders: bool,
+    show_remote_heads: bool,
+    color_preset: usize,
+    date_width: f32,
+    author_width: f32,
+    commit_width: f32,
     diff: Option<DiffView>,
     review: ReviewStore,
     hovered: Option<RowKind>,
@@ -247,6 +255,14 @@ impl GraphView {
             detail: None,
             detail_sha: None,
             compare_files: Vec::new(),
+            tags: Vec::new(),
+            file_tree: false,
+            compact_folders: true,
+            show_remote_heads: false,
+            color_preset: 0,
+            date_width: 150.,
+            author_width: 130.,
+            commit_width: 80.,
             diff: None,
             review: ReviewStore::load(),
             hovered: None,
@@ -258,6 +274,7 @@ impl GraphView {
                 first_parent: false,
                 use_mailmap: false,
                 include_reflogs: false,
+                remote_heads: false,
             },
             show_stashes: true,
             show_uncommitted: true,
@@ -317,6 +334,8 @@ impl GraphView {
         self.remote_info = git::hosting_remote(&repo.path);
         self.filter.use_mailmap = self.use_mailmap;
         self.filter.include_reflogs = self.include_reflogs;
+        self.filter.remote_heads = self.show_remote_heads;
+        self.tags = git::tags_with_details(&repo.path);
         if self.show_uncommitted {
             self.status = git::status(&repo.path, self.include_untracked);
         }
@@ -760,6 +779,23 @@ impl GraphView {
         }
     }
 
+    fn lane_palette(&self) -> [gpui::Rgba; 8] {
+        match self.color_preset % 3 {
+            1 => [
+                gpui::rgb(0x1f77b4),
+                gpui::rgb(0xff7f0e),
+                gpui::rgb(0x2ca02c),
+                gpui::rgb(0xd62728),
+                gpui::rgb(0x9467bd),
+                gpui::rgb(0x8c564b),
+                gpui::rgb(0xe377c2),
+                gpui::rgb(0x7f7f7f),
+            ],
+            2 => [gpui::rgb(0x808080); 8],
+            _ => self.theme.lane_colors,
+        }
+    }
+
     fn run_prompt(&mut self, cx: &mut Context<Self>) {
         let Some(prompt) = self.prompt.take() else {
             return;
@@ -1003,10 +1039,14 @@ impl Render for GraphView {
             compare: self.compare,
             head_ancestors: self.head_ancestors.clone(),
             theme: theme.clone(),
+            lane_colors: self.lane_palette(),
             emoji_enabled: self.emoji_enabled,
             combine_refs: self.combine_refs,
             columns: self.columns,
             date_mode: self.date_mode,
+            date_width: self.date_width,
+            author_width: self.author_width,
+            commit_width: self.commit_width,
         };
 
         let body: AnyElement = if let Some(error) = &self.error {
@@ -1175,21 +1215,23 @@ impl GraphView {
                     }),
             )
             .child(
-                div()
+                h_flex()
                     .w_full()
                     .px_3()
                     .py_1()
-                    .text_sm()
-                    .text_color(theme.text_muted)
-                    .child({
+                    .gap_2()
+                    .items_center()
+                    .child(avatar_circle(&detail.author, &theme))
+                    .child(div().text_sm().text_color(theme.text_muted).child({
                         let mut meta = format!("{} <{}>", detail.author, detail.email);
                         if let Some(signature) = self.signature {
                             meta.push_str(&format!("  ·  signature {signature}"));
                         }
                         meta
-                    }),
+                    })),
             )
             .child(self.render_message(&detail.message))
+            .child(self.render_tags(&sha))
             .child(self.render_detail_actions(&sha, weak))
             .child(
                 div()
@@ -1202,6 +1244,47 @@ impl GraphView {
             )
             .child(v_flex().w_full().overflow_y_scroll().children(files))
             .into_any_element()
+    }
+
+    fn render_tags(&self, sha: &str) -> AnyElement {
+        let theme = self.theme.clone();
+        let matching: Vec<&git::TagDetail> =
+            self.tags.iter().filter(|tag| tag.commit == sha).collect();
+        if matching.is_empty() {
+            return div().into_any_element();
+        }
+        let rows: Vec<AnyElement> = matching
+            .iter()
+            .map(|tag| {
+                v_flex()
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .gap_0p5()
+                    .border_t_1()
+                    .border_color(theme.border)
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.accent)
+                            .child(format!("tag {}", tag.name)),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.text_muted)
+                            .child(format!("{}  {}", tag.tagger, tag.date)),
+                    )
+                    .child(
+                        div()
+                            .text_sm()
+                            .text_color(theme.text)
+                            .child(tag.message.clone()),
+                    )
+                    .into_any_element()
+            })
+            .collect();
+        v_flex().w_full().children(rows).into_any_element()
     }
 
     fn render_message(&self, message: &str) -> AnyElement {
@@ -1491,6 +1574,9 @@ impl GraphView {
             (date_label, self.date_mode == DateMode::Commit, "date"),
             ("Respect .mailmap", self.use_mailmap, "mailmap"),
             ("Include reflog commits", self.include_reflogs, "reflogs"),
+            ("Show remote HEAD refs", self.show_remote_heads, "remote-heads"),
+            ("File tree in details", self.file_tree, "file-tree"),
+            ("Compact folders", self.compact_folders, "compact-folders"),
         ];
 
         let mut items: Vec<AnyElement> = toggles
@@ -1520,6 +1606,7 @@ impl GraphView {
 
         for (label, id) in [
             ("Cycle repository order (name/path/given)", "repo-order"),
+            ("Cycle lane colours", "color-preset"),
             ("Export configuration to .gitviz.conf", "export-config"),
             ("End all code reviews", "end-reviews"),
         ] {
@@ -1810,6 +1897,14 @@ impl GraphView {
                 };
                 self.sort_repos();
             }
+            "color-preset" => self.color_preset = (self.color_preset + 1) % 3,
+            "file-tree" => self.file_tree = !self.file_tree,
+            "compact-folders" => self.compact_folders = !self.compact_folders,
+            "remote-heads" => {
+                self.show_remote_heads = !self.show_remote_heads;
+                self.load(cx);
+                return;
+            }
             "export-config" => {
                 self.export_repo_config(cx);
                 return;
@@ -2037,10 +2132,14 @@ struct RowRenderContext {
     compare: Option<usize>,
     head_ancestors: HashSet<String>,
     theme: Theme,
+    lane_colors: [gpui::Rgba; 8],
     emoji_enabled: bool,
     combine_refs: bool,
     columns: Columns,
     date_mode: DateMode,
+    date_width: f32,
+    author_width: f32,
+    commit_width: f32,
 }
 
 impl RowRenderContext {
@@ -2144,7 +2243,7 @@ impl RowRenderContext {
         weak: gpui::WeakEntity<GraphView>,
         _position: usize,
     ) -> AnyElement {
-        let colors = theme.lane_colors;
+        let colors = self.lane_colors;
         let lane_area = (self.commits.iter().map(|c| c.lane).max().unwrap_or(0) + 1) as f32
             * LANE_WIDTH
             + 8.;
@@ -2257,12 +2356,14 @@ impl RowRenderContext {
                     .text_color(if is_ancestor { theme.text } else { theme.text_muted })
                     .child(format!("{}{}  {}", refs, commit.short_sha(), subject)),
             )
-            .when(self.columns.date, |this| this.child(column_cell(&date, theme, 150.)))
+            .when(self.columns.date, |this| {
+                this.child(column_cell(&date, theme, self.date_width))
+            })
             .when(self.columns.author, |this| {
-                this.child(column_cell(&commit.author, theme, 130.))
+                this.child(column_cell(&commit.author, theme, self.author_width))
             })
             .when(self.columns.commit, |this| {
-                this.child(column_cell(commit.short_sha(), theme, 80.))
+                this.child(column_cell(commit.short_sha(), theme, self.commit_width))
             })
             .into_any_element()
     }

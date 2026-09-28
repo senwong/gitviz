@@ -48,13 +48,25 @@ pub struct LogFilter {
     pub first_parent: bool,
     pub use_mailmap: bool,
     pub include_reflogs: bool,
+    pub remote_heads: bool,
 }
 
 #[derive(Clone, Debug)]
 pub struct ChangedFile {
+    /// `A`dded, `M`odified, `D`eleted, `R`enamed or `U`nmerged.
+    pub status: char,
     pub added: u32,
     pub removed: u32,
     pub path: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct TagDetail {
+    pub name: String,
+    pub commit: String,
+    pub tagger: String,
+    pub date: String,
+    pub message: String,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -128,6 +140,9 @@ pub fn log(repo: &Path, limit: usize, filter: &LogFilter) -> anyhow::Result<Vec<
     if filter.tags {
         args.push("--tags".into());
     }
+    if filter.remote_heads {
+        args.push("--glob=refs/remotes/*/HEAD".into());
+    }
     args.push("HEAD".into());
 
     let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -192,6 +207,22 @@ pub fn commit_detail(repo: &Path, sha: &str) -> anyhow::Result<CommitDetail> {
     let email = parts.next().unwrap_or_default().to_string();
     let timestamp = parts.next().unwrap_or("0").trim().parse().unwrap_or(0);
 
+    let mut statuses: std::collections::HashMap<String, char> = std::collections::HashMap::new();
+    let name_status = run(repo, &["show", "--name-status", "--format=", sha]).unwrap_or_default();
+    for line in name_status.lines() {
+        let mut columns = line.split('\t');
+        let Some(status) = columns.next() else {
+            continue;
+        };
+        // Renames/copies carry two paths; the last field is the new path.
+        let path = columns.last().unwrap_or_default();
+        if path.is_empty() {
+            continue;
+        }
+        let code = status.chars().next().unwrap_or('M');
+        statuses.insert(path.to_string(), code);
+    }
+
     let numstat = run(repo, &["show", "--numstat", "--format=", sha]).unwrap_or_default();
     let mut files = Vec::new();
     for line in numstat.lines() {
@@ -205,6 +236,7 @@ pub fn commit_detail(repo: &Path, sha: &str) -> anyhow::Result<CommitDetail> {
             continue;
         }
         files.push(ChangedFile {
+            status: statuses.get(path).copied().unwrap_or('M'),
             added: added.parse().unwrap_or(0),
             removed: removed.parse().unwrap_or(0),
             path: path.to_string(),
@@ -230,6 +262,35 @@ pub fn tags(repo: &Path) -> Vec<String> {
     run(repo, &["tag"])
         .map(|output| lines(&output))
         .unwrap_or_default()
+}
+
+/// Annotated tags with their tagger and message, keyed by the tagged commit.
+pub fn tags_with_details(repo: &Path) -> Vec<TagDetail> {
+    let format = format!(
+        "--format=%(refname:short){RECORD_SEP}%(*objectname){RECORD_SEP}%(taggername){RECORD_SEP}%(taggerdate:iso){RECORD_SEP}%(subject){RECORD_SEP}%(objecttype)"
+    );
+    let output = run(repo, &["for-each-ref", "refs/tags", &format]).unwrap_or_default();
+    let mut details = Vec::new();
+    for line in output.lines() {
+        let mut fields = line.split(RECORD_SEP);
+        let name = fields.next().unwrap_or_default().to_string();
+        let commit = fields.next().unwrap_or_default().to_string();
+        let tagger = fields.next().unwrap_or_default().to_string();
+        let date = fields.next().unwrap_or_default().to_string();
+        let message = fields.next().unwrap_or_default().to_string();
+        let object_type = fields.next().unwrap_or_default();
+        if object_type != "tag" || commit.is_empty() {
+            continue;
+        }
+        details.push(TagDetail {
+            name,
+            commit,
+            tagger,
+            date,
+            message,
+        });
+    }
+    details
 }
 
 // -- Mutating operations ---------------------------------------------------
@@ -610,6 +671,50 @@ pub fn hosting_remote(repo: &Path) -> Option<RemoteInfo> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_github_ssh_remote() {
+        let info = parse_remote("git@github.com:senwong/gitviz.git").unwrap();
+        assert_eq!(info.provider, Provider::GitHub);
+        assert_eq!(info.owner, "senwong");
+        assert_eq!(info.repo, "gitviz");
+        assert_eq!(
+            info.commit_url("abc123"),
+            "https://github.com/senwong/gitviz/commit/abc123"
+        );
+    }
+
+    #[test]
+    fn parses_gitlab_https_remote_with_subgroup() {
+        let info = parse_remote("https://gitlab.com/group/sub/proj.git").unwrap();
+        assert_eq!(info.provider, Provider::GitLab);
+        assert_eq!(info.owner, "group");
+        assert_eq!(info.repo, "sub/proj");
+    }
+
+    #[test]
+    fn parses_bitbucket_remote() {
+        let info = parse_remote("git@bitbucket.org:team/repo.git").unwrap();
+        assert_eq!(info.provider, Provider::Bitbucket);
+        assert!(info.issue_url("7").ends_with("/issues/7"));
+    }
+
+    #[test]
+    fn unknown_host_is_none() {
+        assert!(parse_remote("git@example.com:me/repo.git").is_none());
+        assert!(parse_remote("not a url").is_none());
+    }
+
+    #[test]
+    fn urlencode_escapes_specials() {
+        assert_eq!(urlencode("a b/c"), "a%20b%2Fc");
+        assert_eq!(urlencode("safe-._~"), "safe-._~");
+    }
 }
 
 pub fn checkout_commit(repo: &Path, sha: &str) -> anyhow::Result<()> {

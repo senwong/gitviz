@@ -99,6 +99,23 @@ PROGRESS.md         本文件
 - [ ] 提交 drop、annotated tag 详情、签名验证细节
 - [ ] 悬浮 tooltip：包含该提交的分支/标签/stash
 
+## 测试
+
+- **单元测试**（`#[cfg(test)] mod tests`）：
+  - `emoji.rs`：shortcode 替换
+  - `markdown.rs`：粗体/斜体/行内代码解析
+  - `layout.rs`：lane 分配（线性 / merge / 不变量）
+  - `config.rs`：`.gitviz.conf` 读写往返
+  - `git.rs`：`parse_remote`（GitHub/GitLab/Bitbucket、未知 host）、`urlencode`
+- **集成测试**（`tests/git_integration.rs`）：在临时目录 `git init` 真实仓库，跑 log/status/branches/tag/stash/commit_detail/remotes。
+- 为支持集成测试，新增了 `src/lib.rs`（lib target），`main.rs` 改为引用 `gitviz::...`。
+- 运行（编译通过后）：
+  ```sh
+  ./script/build test
+  ./script/build test --test git_integration
+  ```
+- **注意**：这些测试目前也**还没跑过**（代码未编译）。第一次 build 后用它们验证。
+
 ## 快速上手（给接棒的自己）
 
 ```sh

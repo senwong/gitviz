@@ -113,3 +113,38 @@ impl RepoConfig {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("gitviz-cfg-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn round_trips_configuration() {
+        let dir = temp_dir("roundtrip");
+        let mut config = RepoConfig::default();
+        config.first_parent = true;
+        config.emoji = false;
+        config.repo_order = "path".to_string();
+        config.save(&dir).unwrap();
+
+        let loaded = RepoConfig::load(&dir).unwrap();
+        assert!(loaded.first_parent);
+        assert!(!loaded.emoji);
+        assert_eq!(loaded.repo_order, "path");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn missing_file_is_none() {
+        let dir = temp_dir("missing");
+        assert!(RepoConfig::load(&dir).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

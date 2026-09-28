@@ -87,3 +87,22 @@ fn emoji_for(code: &str) -> Option<&'static str> {
         _ => return None,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replaces_known_shortcodes() {
+        assert_eq!(replace_shortcodes(":bug: fix"), "🐛 fix");
+        assert_eq!(replace_shortcodes(":sparkles: feat :rocket:"), "✨ feat 🚀");
+        assert_eq!(replace_shortcodes(":+1: nice"), "👍 nice");
+    }
+
+    #[test]
+    fn leaves_unknown_and_plain_colons() {
+        assert_eq!(replace_shortcodes(":unknown:"), ":unknown:");
+        assert_eq!(replace_shortcodes("10:30 met"), "10:30 met");
+        assert_eq!(replace_shortcodes("no colons"), "no colons");
+    }
+}
