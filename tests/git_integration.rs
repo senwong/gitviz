@@ -189,6 +189,25 @@ fn lists_and_diffs_stash_contents() {
 }
 
 #[test]
+fn reports_ahead_behind_counts() {
+    let repo = TempRepo::new("aheadbehind");
+    repo.commit("a.txt", "1\n", "one");
+    // `create_branch` checks the new branch out, so switch back to main first.
+    git::create_branch(&repo.path, "feature", None).unwrap();
+    git::checkout_branch(&repo.path, "main").unwrap();
+    repo.commit("b.txt", "2\n", "two");
+
+    // HEAD (main) is one commit ahead of feature, and feature has none unique.
+    let (ahead, behind) = git::ahead_behind(&repo.path, "feature").expect("counts");
+    assert_eq!((ahead, behind), (0, 1));
+
+    // With feature checked out, main is ahead of HEAD and nothing is behind.
+    git::checkout_branch(&repo.path, "feature").unwrap();
+    let (ahead, behind) = git::ahead_behind(&repo.path, "main").expect("counts");
+    assert_eq!((ahead, behind), (1, 0));
+}
+
+#[test]
 fn stashes_containing_reports_ancestor_commits() {
     let repo = TempRepo::new("stashcontains");
     repo.commit("a.txt", "1\n", "one");

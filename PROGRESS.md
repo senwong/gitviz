@@ -75,6 +75,8 @@
 - 静态审查修正（对照 pinned gpui rev `a8535d86` 源码）：**`h_flex`/`v_flex` 不在 gpui（在 zed 的 `ui` crate）**，改为在 `view.rs` 内定义本地 `h_flex`/`v_flex`；**`overflow_y_scroll` 只在 `StatefulInteractiveElement`（需要先 `.id(...)`）**，给所有可滚动列表加唯一 `id`。其余 gpui 方法（`when`/`when_some`、`on_hover`/`on_mouse_move`/`on_mouse_up`、`canvas`、`PathBuilder::curve_to(to, ctrl)`、`write_to_clipboard`、`font_weight`、tailwind 风格方法等）已逐一核对存在。
 - 批次 33（A 项）：**自定义 Issue URL 模板**——`.gitviz.conf` 的 `issue_provider`（占位符 `{host}/{owner}/{repo}/{issue}`）；详情面板的 “Create PR”/“Open Issue” 也改为优先使用自定义 provider（此前只用了内置）。**新增 `render_issue_template` 单测、config 往返扩展，并补 `find_urls`/`find_issues`/`combine_refs` 单测**
 - 验证：非 UI 逻辑（含上述所有 git 单测/集成测试）已在独立 crate 跑通 **36 单测 + 20 集成**；仅 `view.rs`/`theme.rs` 未编译。
+- 批次 34（A 项）：**分支 ahead/behind**——`git rev-list --left-right --count <branch>...HEAD`（`parse_ahead_behind`/`ahead_behind`），在 load 时缓存到 `branch_tracking`，分支面板显示 ↑ahead / ↓behind。**新增 `parse_ahead_behind` 单测、`reports_ahead_behind_counts` 集成测试、`build_tree_rows` 文件树单测**
+- 验证更新：独立 crate 目前 **37 单测 + 21 集成 = 58 项全部通过**。
 
 ## 文件结构
 

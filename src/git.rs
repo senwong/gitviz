@@ -325,6 +325,26 @@ pub fn local_branches(repo: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Parses `git rev-list --left-right --count <branch>...HEAD` output of the
+/// form `"<ahead>\t<behind>"` into `(ahead, behind)`.
+///
+/// `--left-right` prints the commits unique to the left side (the branch) and
+/// then the right side (HEAD), so the first column is how far the branch is
+/// ahead and the second how far it is behind.
+pub fn parse_ahead_behind(output: &str) -> Option<(usize, usize)> {
+    let mut columns = output.split_whitespace();
+    let ahead: usize = columns.next()?.parse().ok()?;
+    let behind: usize = columns.next()?.parse().ok()?;
+    Some((ahead, behind))
+}
+
+/// How many commits `branch` is ahead of / behind the current HEAD.
+pub fn ahead_behind(repo: &Path, branch: &str) -> Option<(usize, usize)> {
+    let range = format!("{branch}...HEAD");
+    let output = run(repo, &["rev-list", "--left-right", "--count", &range]).ok()?;
+    parse_ahead_behind(&output)
+}
+
 pub fn tags(repo: &Path) -> Vec<String> {
     run(repo, &["tag"])
         .map(|output| lines(&output))
@@ -1095,6 +1115,13 @@ mod tests {
             ),
             "https://bugs.example.com/acme/widget/issues/42"
         );
+    }
+
+    #[test]
+    fn parses_ahead_behind_counts() {
+        assert_eq!(parse_ahead_behind("0\t1\n"), Some((0, 1)));
+        assert_eq!(parse_ahead_behind("3 2"), Some((3, 2)));
+        assert_eq!(parse_ahead_behind("garbage"), None);
     }
 }
 

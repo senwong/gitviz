@@ -124,7 +124,7 @@ script/build       cargo 包装脚本
   - [x] 是否属于 HEAD 祖先（颜色 + 底部信息条 “in HEAD / not in HEAD”）
   - [x] 详情显示包含该提交的分支/标签；悬浮信息条显示 refs / HEAD，并懒加载并缓存 “contained in: 分支/标签/stash”
 - 分支过滤
-  - [x] 过滤面板（点击选择分支，客户端过滤）
+  - [x] 过滤面板（点击选择分支，客户端过滤）；显示相对 HEAD 的 ↑ahead / ↓behind
   - [x] `Show All` 已做；custom glob patterns（`glob_match` + 设置/命令面板 “Add branch glob…” + `.gitviz.conf`）
 - 查找（Find）
   - [x] 文案搜索（提交信息含正文/作者/哈希/日期/ref 名），Cmd+F

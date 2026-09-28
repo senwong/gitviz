@@ -121,6 +121,7 @@ pub struct GraphView {
     prompt: Option<Prompt>,
     menu: Option<Menu>,
     branch_filter: BranchFilter,
+    branch_tracking: std::collections::HashMap<String, (usize, usize)>,
     settings_open: bool,
     search_active: bool,
     search_query: String,
@@ -581,6 +582,7 @@ impl GraphView {
             prompt: None,
             menu: None,
             branch_filter: BranchFilter::default(),
+            branch_tracking: std::collections::HashMap::new(),
             settings_open: false,
             search_active: false,
             search_query: String::new(),
@@ -641,6 +643,14 @@ impl GraphView {
         self.filter.remote_heads = self.show_remote_heads;
         self.filter.full_refs = self.use_full_refs;
         self.tags = git::tags_with_details(&repo.path);
+        self.branch_tracking = self
+            .branch_filter
+            .all
+            .iter()
+            .filter_map(|branch| {
+                git::ahead_behind(&repo.path, branch).map(|counts| (branch.clone(), counts))
+            })
+            .collect();
         if self.show_uncommitted {
             self.status = git::status(&repo.path, self.include_untracked);
         }
@@ -2594,6 +2604,21 @@ impl GraphView {
                             .child(if checked { "[x]" } else { "[ ]" }),
                     )
                     .child(div().flex_1().text_color(theme.text).child(name.clone()))
+                    .when_some(self.branch_tracking.get(name).copied(), |this, (ahead, behind)| {
+                        let mut parts = Vec::new();
+                        if ahead > 0 {
+                            parts.push(format!("↑{ahead}"));
+                        }
+                        if behind > 0 {
+                            parts.push(format!("↓{behind}"));
+                        }
+                        this.child(
+                            div()
+                                .text_sm()
+                                .text_color(theme_row.text_muted)
+                                .child(parts.join(" ")),
+                        )
+                    })
                     .child(action_button(
                         format!("branch-copy-{}", name),
                         "Copy",
