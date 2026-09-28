@@ -8,7 +8,7 @@
 //! between the discovered repositories.
 
 use gitviz::{discovery, view};
-use gpui::{App, Bounds, WindowBounds, WindowOptions, px, size};
+use gpui::{App, AppContext as _, Bounds, WindowBounds, WindowOptions, px, size};
 use gpui_platform::application;
 
 fn main() {
