@@ -118,7 +118,7 @@ script/build       cargo 包装脚本
   - [x] 持久化 + 90 天过期；工作区级命令（End all / 停止当前提交）
 - 未提交变更
   - [x] 显示与选择、查看文件列表
-  - [x] Stash 操作（push/apply/pop/drop/branch）+ 未提交变更的 Stash/Discard
+  - [x] Stash 操作（push/apply/pop/drop/branch）+ 未提交变更的 Stash/Discard（整仓 + 单文件）
   - [x] Stash 详情：文件列表 + 每个文件的 diff（`git stash show`）
 - 悬浮提示
   - [x] 是否属于 HEAD 祖先（颜色 + 底部信息条 “in HEAD / not in HEAD”）

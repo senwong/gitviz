@@ -1894,11 +1894,13 @@ impl GraphView {
         let sha = self.detail_sha.clone().unwrap_or_default();
         let comparing = self.compare.is_some();
         let review_active = !comparing && self.review.has_commit(&sha);
+        // The uncommitted-changes view is the only one with no commit or stash.
+        let can_discard = self.detail_sha.is_none() && self.detail_stash.is_none();
 
         let files: Vec<AnyElement> = if comparing {
             self.compare_files
                 .iter()
-                .map(|file| render_file_row(file, &file.path, &weak, &theme, None))
+                .map(|file| render_file_row(file, &file.path, &weak, &theme, None, false))
                 .collect()
         } else if self.file_tree {
             build_tree_rows(&detail.files, self.compact_folders)
@@ -1924,6 +1926,7 @@ impl GraphView {
                                 &weak,
                                 &theme,
                                 Some((sha.clone(), reviewed, review_active)),
+                                can_discard,
                             ),
                         )
                     }
@@ -1941,6 +1944,7 @@ impl GraphView {
                         &weak,
                         &theme,
                         Some((sha.clone(), reviewed, review_active)),
+                        can_discard,
                     )
                 })
                 .collect()
@@ -3191,6 +3195,7 @@ fn render_file_row(
     weak: &gpui::WeakEntity<GraphView>,
     theme: &Theme,
     review: Option<(String, bool, bool)>,
+    can_discard: bool,
 ) -> AnyElement {
     let path = file.path.clone();
     let weak_click = weak.clone();
@@ -3198,9 +3203,11 @@ fn render_file_row(
     let weak_copy = weak.clone();
     let weak_open = weak.clone();
     let weak_rev = weak.clone();
+    let weak_discard = weak.clone();
     let path_copy = file.path.clone();
     let path_open = file.path.clone();
     let path_rev = file.path.clone();
+    let path_discard = file.path.clone();
     let theme = theme.clone();
     let (sha, reviewed, review_active) = review.unwrap_or_default();
     let needs_review = review_active && !reviewed;
@@ -3293,6 +3300,22 @@ fn render_file_row(
                 })
                 .child("Rev"),
         )
+        .when(can_discard, |this| {
+            this.child(
+                div()
+                    .id(format!("discard-file-{}", file.path))
+                    .text_sm()
+                    .text_color(theme.text_muted)
+                    .on_click(move |_: &ClickEvent, window, cx| {
+                        let _ = window;
+                        cx.stop_propagation();
+                        weak_discard
+                            .update(cx, |this, cx| this.discard_uncommitted_file(&path_discard, cx))
+                            .ok();
+                    })
+                    .child("Discard"),
+            )
+        })
         .into_any_element()
 }
 
@@ -3357,6 +3380,18 @@ impl GraphView {
 
     fn copy_path(&mut self, path: &str, cx: &mut App) {
         cx.write_to_clipboard(gpui::ClipboardItem::new_string(path.to_string()));
+    }
+
+    /// Discards a single uncommitted file (removing it when untracked).
+    fn discard_uncommitted_file(&mut self, path: &str, cx: &mut Context<Self>) {
+        let untracked = self
+            .status
+            .iter()
+            .find(|entry| entry.path == path)
+            .map(|entry| entry.is_untracked())
+            .unwrap_or(false);
+        let path = path.to_string();
+        self.run_op(move |repo| git::discard_file(&repo.path, &path, untracked), cx);
     }
 
     fn open_file(&mut self, path: &str, _cx: &mut Context<Self>) {

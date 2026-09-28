@@ -69,6 +69,7 @@
 - 批次 29（A 项）：**提交正文（body）**——`Commit` 增加 `body`，`git log` 改用记录分隔符解析多行 body；Find 现在也搜索正文。**新增 `reads_commit_body` 集成测试、find 测试扩展**
 - 说明：既然 `git log` 的解析从“逐行”改为“按记录分隔符”，需在 build 时重点验证 log 解析（见“编译时预计要修的点”）
 - 批次 30（A 项）：**完整 ref 名开关**——`LogFilter::full_refs` + `decorate_args`（`--decorate=full`），设置面板 “Show full ref names”。**新增 `decorate_args` 单测**
+- 批次 31（A 项）：**单文件 Discard**——未提交文件行新增 “Discard” 按钮（`git checkout -- <path>` / 未跟踪用 `git clean -f`）。**新增 `discards_a_single_file` 集成测试**
 
 ## 文件结构
 

@@ -334,6 +334,20 @@ fn cherry_pick_and_merge() {
 }
 
 #[test]
+fn discards_a_single_file() {
+    let repo = TempRepo::new("discardfile");
+    repo.commit("a.txt", "1\n", "one");
+
+    std::fs::write(repo.path.join("a.txt"), "changed\n").unwrap();
+    std::fs::write(repo.path.join("untracked.txt"), "new\n").unwrap();
+    assert!(!git::status(&repo.path, true).is_empty());
+
+    git::discard_file(&repo.path, "a.txt", false).unwrap();
+    git::discard_file(&repo.path, "untracked.txt", true).unwrap();
+    assert!(git::status(&repo.path, true).is_empty());
+}
+
+#[test]
 fn discards_uncommitted_changes() {
     let repo = TempRepo::new("discard");
     repo.commit("a.txt", "1\n", "one");

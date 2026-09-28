@@ -628,6 +628,15 @@ pub fn push_tag(repo: &Path, name: &str) -> anyhow::Result<()> {
     run(repo, &["push", "origin", name]).map(|_| ())
 }
 
+/// Discards a single working-tree file, removing it if untracked.
+pub fn discard_file(repo: &Path, path: &str, untracked: bool) -> anyhow::Result<()> {
+    if untracked {
+        run(repo, &["clean", "-f", "--", path]).map(|_| ())
+    } else {
+        run(repo, &["checkout", "--", path]).map(|_| ())
+    }
+}
+
 /// Discards all working tree and index changes, optionally removing untracked
 /// files (`git reset --hard` + `git clean -fd`).
 pub fn discard_all(repo: &Path, include_untracked: bool) -> anyhow::Result<()> {
