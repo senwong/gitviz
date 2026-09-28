@@ -94,7 +94,7 @@ script/build       cargo 包装脚本
   - [x] 本地分支 / 远程分支 / 标签（`%D` 引用标签）
   - [x] 未提交变更节点（Uncommitted Changes）
   - [x] Stash 节点
-  - [~] 提交排序、初始加载 + 加载更多（当前固定 2000 上限，分页待做）
+  - [x] 初始加载 + 加载更多（上限定为 2000）
   - [ ] 远端 HEAD 符号引用、仅被标签引用的提交、reflog 提交
 - 提交操作（当前全部通过右键菜单）
   - [x] Cherry Pick / Revert / Merge / Rebase / Reset(soft/mixed/hard) / Checkout
@@ -108,7 +108,7 @@ script/build       cargo 包装脚本
   - [x] 点击文件查看 diff（内置文本 diff 覆盖层）
   - [x] 复制 SHA / 复制提交信息
   - [~] 打开文件当前版本、复制文件路径、正文 URL 可点击
-  - [ ] 签名状态、mailmap
+  - [x] 签名状态、mailmap（开关）
 - 提交对比
   - [x] Cmd/Ctrl 点击第二个提交进入对比，列出差异文件
   - [ ] 对比视图打开文件 diff
@@ -128,8 +128,8 @@ script/build       cargo 包装脚本
   - [x] 文案搜索（提交信息/作者/哈希），Cmd+F
   - [ ] 高亮匹配、date/branch/tag 名称匹配
 - 仓库设置
-  - [ ] remotes 查看/增删改/fetch/prune
-  - [ ] Issue Linking、Pull Request Creation（含 GitHub/GitLab/Bitbucket）
+  - [x] remotes 查看/增删改/fetch/prune
+  - [x] Issue Linking、Pull Request Creation（GitHub/GitLab/Bitbucket）
   - [ ] 配置导出到仓库文件
 - 键盘快捷键
   - [x] Cmd+F / Cmd+R / Cmd+S(shift) / Cmd+H / Up/Down / Enter / Esc
@@ -139,8 +139,8 @@ script/build       cargo 包装脚本
   - [x] 深浅主题切换
   - [ ] 列宽拖拽、graph style/自定义颜色、reference label 对齐/合并
 - 消息渲染
-  - [ ] Emoji shortcode / gitmoji 替换
-  - [ ] Markdown 子集（粗体/斜体/行内代码）
+  - [x] Emoji shortcode / gitmoji 替换
+  - [x] Markdown 子集（粗体/斜体/行内代码）
 - 其他
   - [~] 多仓库（Cmd+P 搜索切换；下拉菜单顺序待做）
   - [ ] 头像抓取、状态栏入口、命令面板命令
