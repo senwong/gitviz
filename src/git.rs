@@ -347,6 +347,29 @@ pub fn create_tag(repo: &Path, name: &str, sha: &str) -> anyhow::Result<()> {
     run(repo, &["tag", name, sha]).map(|_| ())
 }
 
+/// Arguments for creating an annotated tag with a message.
+pub fn annotated_tag_args(name: &str, sha: &str, message: &str) -> Vec<String> {
+    vec![
+        "tag".to_string(),
+        "-a".to_string(),
+        name.to_string(),
+        sha.to_string(),
+        "-m".to_string(),
+        message.to_string(),
+    ]
+}
+
+pub fn create_annotated_tag(
+    repo: &Path,
+    name: &str,
+    sha: &str,
+    message: &str,
+) -> anyhow::Result<()> {
+    let args = annotated_tag_args(name, sha, message);
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run(repo, &refs).map(|_| ())
+}
+
 pub fn cherry_pick(repo: &Path, sha: &str) -> anyhow::Result<()> {
     run(repo, &["cherry-pick", sha]).map(|_| ())
 }
@@ -922,6 +945,14 @@ mod tests {
         assert_eq!(
             fetch_into_args("upstream", "develop", "local-dev"),
             vec!["fetch", "upstream", "develop:local-dev"]
+        );
+    }
+
+    #[test]
+    fn annotated_tag_args_include_message() {
+        assert_eq!(
+            annotated_tag_args("v1.0", "abc123", "release 1.0"),
+            vec!["tag", "-a", "v1.0", "abc123", "-m", "release 1.0"]
         );
     }
 }

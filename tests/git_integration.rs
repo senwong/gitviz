@@ -98,6 +98,23 @@ fn branch_tag_and_commit_operations() {
 }
 
 #[test]
+fn creates_annotated_tag_with_message() {
+    let repo = TempRepo::new("annotated");
+    repo.commit("a.txt", "1\n", "one");
+    let head = git::log(&repo.path, 1, &LogFilter::default()).unwrap()[0]
+        .sha
+        .clone();
+
+    git::create_annotated_tag(&repo.path, "v1", &head, "first release").unwrap();
+    let tags = git::tags_with_details(&repo.path);
+    let tag = tags
+        .iter()
+        .find(|tag| tag.name == "v1")
+        .expect("annotated tag present");
+    assert_eq!(tag.message.trim(), "first release");
+}
+
+#[test]
 fn stash_workflow() {
     let repo = TempRepo::new("stash");
     repo.commit("a.txt", "1\n", "one");

@@ -59,6 +59,7 @@
 - 批次 19（A 项）：**代码审查的加粗/去粗**（未看文件加粗，打开 diff / Open / Rev 后 `ReviewStore::mark` 自动标记并去粗，`has_commit` 判定审查是否进行中）；**复制 ref 名**（stash 菜单 “Copy Stash Reference”、分支面板 “Copy”）。**新增 `ReviewStore::mark`/`has_commit` 单测**
 - 批次 20（A 项）：**悬浮包含信息**——hover 提交时懒计算并缓存 `git branch --contains` / `git tag --contains`（`Containment`），底部信息条追加 “contained in: …”；切换/刷新仓库时清缓存
 - 批次 21（A 项）：**分支面板新增 Merge / Rebase**（`git merge <branch>` / `git rebase <branch>`，沿用已有 git 实现）。**新增 `pulls_from_a_remote` 集成测试**（覆盖此前未测的 `git::pull`）
+- 批次 22（A 项）：**创建 annotated tag（含 message）**（`git tag -a <name> <sha> -m <message>`；提交右键 “Create Annotated Tag Here…”，提示框输入 `name message`）。**新增 `annotated_tag_args` 单测、`creates_annotated_tag_with_message` 集成测试**
 
 ## 文件结构
 

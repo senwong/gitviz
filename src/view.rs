@@ -341,6 +341,7 @@ enum PromptAction {
     AddGlob,
     EditRemote,
     FetchInto,
+    CreateAnnotatedTag,
 }
 
 struct DiffView {
@@ -377,6 +378,7 @@ enum MenuAction {
     Drop,
     CreateBranch,
     CreateTag,
+    CreateAnnotatedTag,
     Push,
     CopySha,
     CopyMessage,
@@ -420,6 +422,7 @@ impl MenuAction {
             MenuAction::Drop => "Drop Commit",
             MenuAction::CreateBranch => "Create Branch Here…",
             MenuAction::CreateTag => "Create Tag Here…",
+            MenuAction::CreateAnnotatedTag => "Create Annotated Tag Here…",
             MenuAction::Push => "Push Branch",
             MenuAction::CopySha => "Copy SHA",
             MenuAction::CopyMessage => "Copy Commit Message",
@@ -450,6 +453,7 @@ impl MenuAction {
             MenuAction::Drop => "drop",
             MenuAction::CreateBranch => "create-branch",
             MenuAction::CreateTag => "create-tag",
+            MenuAction::CreateAnnotatedTag => "create-annotated-tag",
             MenuAction::Push => "push",
             MenuAction::CopySha => "copy-sha",
             MenuAction::CopyMessage => "copy-message",
@@ -1314,6 +1318,17 @@ impl GraphView {
                     );
                 }
             }
+            PromptAction::CreateAnnotatedTag => {
+                let (tag, message) = match name.split_once(' ') {
+                    Some((tag, message)) => (tag.to_string(), message.trim().to_string()),
+                    None => (name.clone(), String::new()),
+                };
+                let sha = sha.clone();
+                self.run_op(
+                    move |repo| git::create_annotated_tag(&repo.path, &tag, &sha, &message),
+                    cx,
+                );
+            }
         }
     }
 
@@ -1340,6 +1355,7 @@ impl GraphView {
                         MenuAction::Drop,
                         MenuAction::CreateBranch,
                         MenuAction::CreateTag,
+                        MenuAction::CreateAnnotatedTag,
                         MenuAction::Push,
                         MenuAction::CopySha,
                         MenuAction::CopyMessage,
@@ -1418,6 +1434,15 @@ impl GraphView {
                         title: "Create tag".into(),
                         input: String::new(),
                         action: PromptAction::CreateTag,
+                        sha,
+                    });
+                    cx.notify();
+                }
+                MenuAction::CreateAnnotatedTag => {
+                    self.prompt = Some(Prompt {
+                        title: "Create annotated tag (name message)".into(),
+                        input: String::new(),
+                        action: PromptAction::CreateAnnotatedTag,
                         sha,
                     });
                     cx.notify();

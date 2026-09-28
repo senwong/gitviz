@@ -100,7 +100,7 @@ script/build       cargo 包装脚本
   - [x] Create Branch / Create Tag Here
   - [x] Push（当前分支）
   - [x] 分支操作（checkout/create/rename/delete/merge/rebase/pull/push）
-  - [x] 标签操作（create / push / delete UI）
+  - [x] 标签操作（create / create annotated / push / delete UI）
   - [x] 提交 drop、annotated tag 详情（tagger/date/message）
 - 提交详情
   - [x] 提交信息 / 作者 / 邮件 / 改动文件（+/-）
