@@ -1585,6 +1585,10 @@ impl GraphView {
         };
         self.file_tree = config.file_tree;
         self.compact_folders = config.compact_folders;
+        self.date_short = config.date_short;
+        self.relative_dates = config.relative_dates;
+        self.use_full_refs = config.full_refs;
+        self.scroll_to_head_on_load = config.scroll_to_head;
         self.repo_order = RepoOrder::from_str(&config.repo_order);
         self.branch_globs = config.branch_globs;
         self.custom_lane_colors = config.lane_colors;
@@ -1769,6 +1773,10 @@ impl GraphView {
             columns_commit: self.columns.commit,
             file_tree: self.file_tree,
             compact_folders: self.compact_folders,
+            date_short: self.date_short,
+            relative_dates: self.relative_dates,
+            full_refs: self.use_full_refs,
+            scroll_to_head: self.scroll_to_head_on_load,
             repo_order: self.repo_order.as_str().to_string(),
             branch_globs: self.branch_globs.clone(),
             lane_colors: self.custom_lane_colors.clone(),
