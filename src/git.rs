@@ -51,7 +51,7 @@ pub struct LogFilter {
     pub remote_heads: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ChangedFile {
     /// `A`dded, `M`odified, `D`eleted, `R`enamed or `U`nmerged.
     pub status: char,

@@ -1180,7 +1180,36 @@ impl GraphView {
         let files: Vec<AnyElement> = if comparing {
             self.compare_files
                 .iter()
-                .map(|file| render_file_row(file, &weak, &theme, None))
+                .map(|file| render_file_row(file, &file.path, &weak, &theme, None))
+                .collect()
+        } else if self.file_tree {
+            build_tree_rows(&detail.files, self.compact_folders)
+                .into_iter()
+                .map(|row| {
+                    if row.is_dir {
+                        indent_wrap(
+                            row.depth,
+                            div()
+                                .text_sm()
+                                .text_color(theme.text_muted)
+                                .child(format!("{}/", row.name))
+                                .into_any_element(),
+                        )
+                    } else {
+                        let file = row.file.unwrap_or_default();
+                        let reviewed = self.review.is_reviewed(&format!("{sha}\t{}", file.path));
+                        indent_wrap(
+                            row.depth,
+                            render_file_row(
+                                &file,
+                                &row.name,
+                                &weak,
+                                &theme,
+                                Some((sha.clone(), reviewed)),
+                            ),
+                        )
+                    }
+                })
                 .collect()
         } else {
             detail
@@ -1188,7 +1217,7 @@ impl GraphView {
                 .iter()
                 .map(|file| {
                     let reviewed = self.review.is_reviewed(&format!("{sha}\t{}", file.path));
-                    render_file_row(file, &weak, &theme, Some((sha.clone(), reviewed)))
+                    render_file_row(file, &file.path, &weak, &theme, Some((sha.clone(), reviewed)))
                 })
                 .collect()
         };
@@ -1966,6 +1995,7 @@ fn overlay(theme: Theme, top: f32, width: f32, children: Vec<AnyElement>) -> Any
 
 fn render_file_row(
     file: &ChangedFile,
+    display: &str,
     weak: &gpui::WeakEntity<GraphView>,
     theme: &Theme,
     review: Option<(String, bool)>,
@@ -1992,6 +2022,7 @@ fn render_file_row(
                 .update(cx, |this, cx| this.open_diff(&path, cx))
                 .ok();
         })
+        .child(status_letter(file.status, theme))
         .child(
             div()
                 .flex_1()
@@ -1999,7 +2030,7 @@ fn render_file_row(
                 .truncate()
                 .text_sm()
                 .text_color(theme.text)
-                .child(file.path.clone()),
+                .child(display.to_string()),
         )
         .child(
             div()
@@ -2380,6 +2411,125 @@ fn combine_refs(refs: &[String]) -> Vec<String> {
         })
         .cloned()
         .collect()
+}
+
+struct TreeNode {
+    dirs: std::collections::BTreeMap<String, TreeNode>,
+    files: Vec<ChangedFile>,
+}
+
+impl TreeNode {
+    fn new() -> Self {
+        Self {
+            dirs: std::collections::BTreeMap::new(),
+            files: Vec::new(),
+        }
+    }
+}
+
+struct TreeRow {
+    depth: usize,
+    is_dir: bool,
+    name: String,
+    file: Option<ChangedFile>,
+}
+
+fn build_tree_rows(files: &[ChangedFile], compact: bool) -> Vec<TreeRow> {
+    let mut root = TreeNode::new();
+    for file in files {
+        let parts: Vec<&str> = file.path.split('/').collect();
+        let mut node = &mut root;
+        for part in &parts[..parts.len().saturating_sub(1)] {
+            node = node.dirs.entry(part.to_string()).or_insert_with(TreeNode::new);
+        }
+        node.files.push(file.clone());
+    }
+    let mut rows = Vec::new();
+    flatten_tree(&root, 0, compact, &mut rows);
+    rows
+}
+
+fn flatten_tree(node: &TreeNode, depth: usize, compact: bool, rows: &mut Vec<TreeRow>) {
+    for (dir_name, child) in &node.dirs {
+        let mut name = dir_name.clone();
+        let mut current = child;
+        if compact {
+            while current.files.is_empty() && current.dirs.len() == 1 {
+                let (next_name, next) = current.dirs.iter().next().expect("one child");
+                name = format!("{name}/{next_name}");
+                current = next;
+            }
+        }
+        rows.push(TreeRow {
+            depth,
+            is_dir: true,
+            name,
+            file: None,
+        });
+        flatten_tree(current, depth + 1, compact, rows);
+    }
+    for file in &node.files {
+        let name = file
+            .path
+            .rsplit('/')
+            .next()
+            .unwrap_or(&file.path)
+            .to_string();
+        rows.push(TreeRow {
+            depth,
+            is_dir: false,
+            name,
+            file: Some(file.clone()),
+        });
+    }
+}
+
+fn indent_wrap(depth: usize, child: AnyElement) -> AnyElement {
+    h_flex()
+        .w_full()
+        .child(div().w(px(depth as f32 * 12.)))
+        .child(child)
+        .into_any_element()
+}
+
+fn avatar_circle(name: &str, theme: &Theme) -> AnyElement {
+    let initial = name
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_else(|| "?".to_string());
+    let hash = name
+        .bytes()
+        .fold(0u32, |acc, byte| acc.wrapping_mul(31).wrapping_add(byte as u32));
+    let color = theme.lane_colors[(hash as usize) % theme.lane_colors.len()];
+    div()
+        .w(px(20.))
+        .h(px(20.))
+        .rounded_full()
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(color)
+        .text_sm()
+        .text_color(theme.bg)
+        .child(initial)
+        .into_any_element()
+}
+
+fn status_letter(status: char, theme: &Theme) -> AnyElement {
+    let color = match status {
+        'A' => theme.accent,
+        'D' => theme.error,
+        'R' => theme.accent,
+        'U' => theme.error,
+        _ => theme.text_muted,
+    };
+    div()
+        .w(px(12.))
+        .text_sm()
+        .text_color(color)
+        .child(status.to_string())
+        .into_any_element()
 }
 
 fn column_cell(text: &str, theme: &Theme, width: f32) -> AnyElement {
