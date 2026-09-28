@@ -272,6 +272,7 @@ enum PromptAction {
     CreateTag,
     AddRemote,
     StashBranch,
+    RenameBranch,
 }
 
 struct DiffView {
@@ -1067,6 +1068,10 @@ impl GraphView {
                 if let Ok(index) = sha.parse::<usize>() {
                     self.run_op(move |repo| git::stash_branch(&repo.path, index, &name), cx);
                 }
+            }
+            PromptAction::RenameBranch => {
+                let old = sha.clone();
+                self.run_op(move |repo| git::rename_branch(&repo.path, &old, &name), cx);
             }
         }
     }
@@ -1960,6 +1965,28 @@ impl GraphView {
     fn render_branch_filter(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
         let theme = self.theme.clone();
         let query = self.branch_filter.query.to_lowercase();
+
+        let show_all = {
+            let weak = weak.clone();
+            let theme = theme.clone();
+            h_flex()
+                .id("branch-show-all")
+                .w_full()
+                .px_3()
+                .py_1()
+                .on_click(move |_: &ClickEvent, window, cx| {
+                    let _ = window;
+                    weak.update(cx, |this, cx| {
+                        this.branch_filter.selected.clear();
+                        this.rows_dirty = true;
+                        cx.notify();
+                    })
+                    .ok();
+                })
+                .child(div().text_color(theme.accent).child("Show All"))
+                .into_any_element()
+        };
+
         let items: Vec<AnyElement> = self
             .branch_filter
             .all
@@ -1967,38 +1994,97 @@ impl GraphView {
             .filter(|name| query.is_empty() || name.to_lowercase().contains(&query))
             .map(|name| {
                 let checked = self.branch_filter.selected.contains(name);
-                let name = name.clone();
-                let weak = weak.clone();
-                let theme = theme.clone();
+                let name_toggle = name.clone();
+                let name_co = name.clone();
+                let name_rn = name.clone();
+                let name_del = name.clone();
+                let weak_toggle = weak.clone();
+                let weak_co = weak.clone();
+                let weak_rn = weak.clone();
+                let weak_del = weak.clone();
+                let theme_row = theme.clone();
                 h_flex()
                     .id(format!("branch-{}", name))
                     .w_full()
                     .px_3()
                     .py_1()
                     .gap_2()
-                    .on_click(move |_: &ClickEvent, window, cx| {
-                        let _ = window;
-                        let name = name.clone();
-                        weak.update(cx, |this, cx| {
-                            if !this.branch_filter.selected.remove(&name) {
-                                this.branch_filter.selected.insert(name);
-                            }
-                            this.rows_dirty = true;
-                            cx.notify();
-                        })
-                        .ok();
-                    })
                     .child(
                         div()
+                            .id(format!("branch-toggle-{}", name))
                             .text_color(if checked { theme.accent } else { theme.text_muted })
+                            .on_click(move |_: &ClickEvent, window, cx| {
+                                let _ = window;
+                                let name = name_toggle.clone();
+                                weak_toggle
+                                    .update(cx, |this, cx| {
+                                        if !this.branch_filter.selected.remove(&name) {
+                                            this.branch_filter.selected.insert(name);
+                                        }
+                                        this.rows_dirty = true;
+                                        cx.notify();
+                                    })
+                                    .ok();
+                            })
                             .child(if checked { "[x]" } else { "[ ]" }),
                     )
-                    .child(div().text_color(theme.text).child(name))
+                    .child(div().flex_1().text_color(theme.text).child(name.clone()))
+                    .child(action_button(
+                        format!("branch-co-{}", name),
+                        "Checkout",
+                        &theme_row,
+                        move |cx| {
+                            let name = name_co.clone();
+                            weak_co
+                                .update(cx, |this, cx| {
+                                    this.run_op(
+                                        move |repo| git::checkout_branch(&repo.path, &name),
+                                        cx,
+                                    )
+                                })
+                                .ok();
+                        },
+                    ))
+                    .child(action_button(
+                        format!("branch-rn-{}", name),
+                        "Rename",
+                        &theme_row,
+                        move |cx| {
+                            let name = name_rn.clone();
+                            weak_rn
+                                .update(cx, |this, cx| {
+                                    this.prompt = Some(Prompt {
+                                        title: "Rename branch".to_string(),
+                                        input: name.clone(),
+                                        action: PromptAction::RenameBranch,
+                                        sha: name,
+                                    });
+                                    cx.notify();
+                                })
+                                .ok();
+                        },
+                    ))
+                    .child(action_button(
+                        format!("branch-del-{}", name),
+                        "Delete",
+                        &theme_row,
+                        move |cx| {
+                            let name = name_del.clone();
+                            weak_del
+                                .update(cx, |this, cx| {
+                                    this.run_op(
+                                        move |repo| git::delete_branch(&repo.path, &name, false),
+                                        cx,
+                                    )
+                                })
+                                .ok();
+                        },
+                    ))
                     .into_any_element()
             })
             .collect();
 
-        overlay(theme.clone(), 120., 420., vec![
+        overlay(theme.clone(), 120., 520., vec![
             div()
                 .w_full()
                 .px_3()
@@ -2006,8 +2092,9 @@ impl GraphView {
                 .text_color(theme.text_muted)
                 .border_b_1()
                 .border_color(theme.border)
-                .child("Filter branches (click to toggle)")
+                .child("Filter branches (click to toggle, or act on one)")
                 .into_any_element(),
+            show_all,
             v_flex().w_full().overflow_y_scroll().children(items).into_any_element(),
         ])
     }
@@ -2935,6 +3022,22 @@ impl RowRenderContext {
 
 const LAYER_PREFIX: f32 = 24.0;
 
+/// Minimal glob matching supporting `*` (any run) and `?` (one character).
+fn glob_match(pattern: &str, text: &str) -> bool {
+    fn helper(pattern: &[char], text: &[char]) -> bool {
+        match pattern.split_first() {
+            None => text.is_empty(),
+            Some(('*', rest)) => (0..=text.len()).any(|skip| helper(rest, &text[skip..])),
+            Some(('?', rest)) => !text.is_empty() && helper(rest, &text[1..]),
+            Some((character, rest)) => text.first() == Some(character) && helper(rest, &text[1..]),
+        }
+    }
+    helper(
+        &pattern.chars().collect::<Vec<_>>(),
+        &text.chars().collect::<Vec<_>>(),
+    )
+}
+
 fn combine_refs(refs: &[String]) -> Vec<String> {
     let locals: HashSet<&str> = refs.iter().map(String::as_str).collect();
     refs.iter()
@@ -3277,6 +3380,15 @@ mod tests {
         assert!(should_load_more(4, 5));
         assert!(!should_load_more(2, 5));
         assert!(!should_load_more(0, 0));
+    }
+
+    #[test]
+    fn glob_matching() {
+        assert!(glob_match("heads/feature/*", "heads/feature/login"));
+        assert!(!glob_match("heads/feature/*", "heads/bugfix/login"));
+        assert!(glob_match("main", "main"));
+        assert!(glob_match("v?.*", "v1.2"));
+        assert!(glob_match("*", "anything"));
     }
 
     #[test]

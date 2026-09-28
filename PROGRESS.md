@@ -47,6 +47,7 @@
 - 批次 8：merge 变体（no-ff / squash）、cherry-pick allow-empty、fetch prune / prune-tags 开关、force push 标记；**`fetch_args`/`push_force_flag` 单测、cherry-pick/merge 集成测试**
 - 批次 9：接近底部自动加载更多（`should_load_more` 单测）、README 清单核对
 - 批次 10：同分支父子跳转（⌘↑/⌘↓，`find_parent_index`/`find_child_index` 单测）、未提交变更菜单 Stash/Discard（`discard_all` 集成测试）
+- 批次 11：分支过滤面板的 Checkout/Rename/Delete 与 Show All、glob 匹配纯函数（`glob_match` 单测）
 
 ## 文件结构
 
