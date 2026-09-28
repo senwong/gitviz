@@ -117,6 +117,7 @@ pub struct GraphView {
     tags: Vec<git::TagDetail>,
     file_tree: bool,
     compact_folders: bool,
+    collapsed_dirs: std::collections::HashSet<String>,
     show_remote_heads: bool,
     use_full_refs: bool,
     fetch_prune: bool,
@@ -609,6 +610,7 @@ impl GraphView {
             tags: Vec::new(),
             file_tree: false,
             compact_folders: true,
+            collapsed_dirs: std::collections::HashSet::new(),
             show_remote_heads: false,
             use_full_refs: false,
             fetch_prune: false,
@@ -2635,16 +2637,46 @@ impl GraphView {
                 .map(|file| render_file_row(file, &file.path, &weak, &theme, None, false))
                 .collect()
         } else if self.file_tree {
-            build_tree_rows(&detail.files, self.compact_folders)
+            build_tree_rows(&detail.files, self.compact_folders, &self.collapsed_dirs)
                 .into_iter()
                 .map(|row| {
                     if row.is_dir {
+                        let collapsed = self.collapsed_dirs.contains(&row.path);
+                        let toggle_path = row.path.clone();
+                        let weak_row = weak.clone();
+                        let theme_row = theme.clone();
                         indent_wrap(
                             row.depth,
                             div()
-                                .text_sm()
-                                .text_color(theme.text_muted)
-                                .child(format!("{}/", row.name))
+                                .id(format!("dir-{}", row.path))
+                                .flex()
+                                .flex_row()
+                                .gap_1()
+                                .cursor_pointer()
+                                .on_click(move |_: &ClickEvent, window, cx| {
+                                    let _ = window;
+                                    let toggle_path = toggle_path.clone();
+                                    weak_row
+                                        .update(cx, |this, cx| {
+                                            if !this.collapsed_dirs.remove(&toggle_path) {
+                                                this.collapsed_dirs.insert(toggle_path);
+                                            }
+                                            cx.notify();
+                                        })
+                                        .ok();
+                                })
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(theme_row.text_muted)
+                                        .child(if collapsed { "▸" } else { "▾" }),
+                                )
+                                .child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(theme_row.text_muted)
+                                        .child(format!("{}/", row.name)),
+                                )
                                 .into_any_element(),
                         )
                     } else {
@@ -5413,10 +5445,16 @@ struct TreeRow {
     depth: usize,
     is_dir: bool,
     name: String,
+    /// Full path (directory path for folders, file path for files).
+    path: String,
     file: Option<ChangedFile>,
 }
 
-fn build_tree_rows(files: &[ChangedFile], compact: bool) -> Vec<TreeRow> {
+fn build_tree_rows(
+    files: &[ChangedFile],
+    compact: bool,
+    collapsed: &HashSet<String>,
+) -> Vec<TreeRow> {
     let mut root = TreeNode::new();
     for file in files {
         let parts: Vec<&str> = file.path.split('/').collect();
@@ -5427,18 +5465,31 @@ fn build_tree_rows(files: &[ChangedFile], compact: bool) -> Vec<TreeRow> {
         node.files.push(file.clone());
     }
     let mut rows = Vec::new();
-    flatten_tree(&root, 0, compact, &mut rows);
+    flatten_tree(&root, 0, compact, "", collapsed, &mut rows);
     rows
 }
 
-fn flatten_tree(node: &TreeNode, depth: usize, compact: bool, rows: &mut Vec<TreeRow>) {
+fn flatten_tree(
+    node: &TreeNode,
+    depth: usize,
+    compact: bool,
+    prefix: &str,
+    collapsed: &HashSet<String>,
+    rows: &mut Vec<TreeRow>,
+) {
     for (dir_name, child) in &node.dirs {
         let mut name = dir_name.clone();
+        let mut path = if prefix.is_empty() {
+            dir_name.clone()
+        } else {
+            format!("{prefix}/{dir_name}")
+        };
         let mut current = child;
         if compact {
             while current.files.is_empty() && current.dirs.len() == 1 {
                 let (next_name, next) = current.dirs.iter().next().expect("one child");
                 name = format!("{name}/{next_name}");
+                path = format!("{path}/{next_name}");
                 current = next;
             }
         }
@@ -5446,9 +5497,12 @@ fn flatten_tree(node: &TreeNode, depth: usize, compact: bool, rows: &mut Vec<Tre
             depth,
             is_dir: true,
             name,
+            path: path.clone(),
             file: None,
         });
-        flatten_tree(current, depth + 1, compact, rows);
+        if !collapsed.contains(&path) {
+            flatten_tree(current, depth + 1, compact, &path, collapsed, rows);
+        }
     }
     for file in &node.files {
         let name = file
@@ -5461,6 +5515,7 @@ fn flatten_tree(node: &TreeNode, depth: usize, compact: bool, rows: &mut Vec<Tre
             depth,
             is_dir: false,
             name,
+            path: file.path.clone(),
             file: Some(file.clone()),
         });
     }
@@ -5953,7 +6008,8 @@ mod tests {
             changed("e.txt"),
         ];
 
-        let rows = build_tree_rows(&files, false);
+        let empty = HashSet::new();
+        let rows = build_tree_rows(&files, false, &empty);
         let names: Vec<(usize, bool, &str)> = rows
             .iter()
             .map(|row| (row.depth, row.is_dir, row.name.as_str()))
@@ -5969,7 +6025,7 @@ mod tests {
             ]
         );
 
-        let compact = build_tree_rows(&files, true);
+        let compact = build_tree_rows(&files, true, &empty);
         let compact_names: Vec<(usize, bool, &str)> = compact
             .iter()
             .map(|row| (row.depth, row.is_dir, row.name.as_str()))
@@ -5983,6 +6039,13 @@ mod tests {
                 (0, false, "e.txt"),
             ]
         );
+
+        // Collapsing a folder hides its children.
+        let mut collapsed = HashSet::new();
+        collapsed.insert("a".to_string());
+        let collapsed_rows = build_tree_rows(&files, false, &collapsed);
+        let names: Vec<&str> = collapsed_rows.iter().map(|row| row.name.as_str()).collect();
+        assert_eq!(names, vec!["a", "e.txt"]);
     }
 
     #[test]
