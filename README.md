@@ -99,7 +99,7 @@ script/build       cargo 包装脚本
   - [x] Cherry Pick / Revert / Merge / Rebase / Reset(soft/mixed/hard) / Checkout
   - [x] Create Branch / Create Tag Here
   - [x] Push（当前分支）
-  - [x] 分支操作（checkout/create/merge/rebase/pull/push）；[~] delete/rename UI
+  - [x] 分支操作（checkout/create/rename/delete/merge/rebase/pull/push）
   - [x] 标签操作（create / push / delete UI）
   - [x] 提交 drop、annotated tag 详情（tagger/date/message）
 - 提交详情
@@ -116,13 +116,13 @@ script/build       cargo 包装脚本
   - [x] 持久化 + 90 天过期；[~] 工作区级命令（End all）
 - 未提交变更
   - [x] 显示与选择、查看文件列表
-  - [x] Stash 操作（push/apply/pop/drop/branch）；[~] Clean/Reset UI
+  - [x] Stash 操作（push/apply/pop/drop/branch）+ 未提交变更的 Stash/Discard
 - 悬浮提示
   - [~] 是否属于 HEAD 祖先（已用颜色区分）
   - [x] 详情显示包含该提交的分支/标签；悬浮信息条显示 refs / HEAD
 - 分支过滤
   - [x] 过滤面板（点击选择分支，客户端过滤）
-  - [ ] custom glob patterns、`Show All` 快捷项
+  - [~] `Show All` 已做；custom glob patterns（`glob_match` 已实现，UI/配置待接入）
 - 查找（Find）
   - [x] 文案搜索（提交信息/作者/哈希），Cmd+F
   - [x] 高亮匹配（⌘G 导航）、date/ref 名称匹配
@@ -132,17 +132,17 @@ script/build       cargo 包装脚本
   - [x] 配置导出到仓库文件（.gitviz.conf）
 - 键盘快捷键
   - [x] Cmd+F / Cmd+R / Cmd+S(shift) / Cmd+H / Up/Down / Enter / Esc
-  - [ ] Cmd/Ctrl+Up/Down 同分支父子跳转、Shift 变体
+  - [~] ⌘↑/⌘↓ 同分支父子跳转已做；Shift 变体（沿替代分支）待做
 - 列与外观
   - [x] Date / Author / Commit 列显示开关（设置面板）
   - [x] 深浅主题切换
-  - [~] 列宽 +/- 调节（拖拽省略）、车道配色预设；reference label 对齐/合并已做
+  - [~] 列宽 +/-（拖拽省略）、车道配色预设（自定义颜色/graph style 省略）；reference label 对齐/合并已做
 - 消息渲染
   - [x] Emoji shortcode / gitmoji 替换
   - [x] Markdown 子集（粗体/斜体/行内代码）
 - 其他
   - [x] 多仓库（Cmd+P 搜索切换 + 仓库排序 + 发现深度）
-  - [~] 首字母头像、命令面板（⇧⌘P）；状态栏入口 N/A（standalone）
+  - [~] 首字母头像（网络头像省略）；命令面板（⇧⌘P）已做；状态栏入口 N/A
   - [x] 仓库最大发现深度可配置
 
 ## 与 Zed 的关系
