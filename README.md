@@ -142,7 +142,7 @@ script/build       cargo 包装脚本
   - [x] Emoji shortcode / gitmoji 替换
   - [x] Markdown 子集（粗体/斜体/行内代码）
 - 其他
-  - [x] 多仓库（Cmd+P 搜索切换 + 仓库排序 + 发现深度）
+  - [x] 多仓库（Cmd+P 搜索切换 + 仓库排序 + 发现深度 + 动态 Add/Remove repository）
   - [~] 首字母头像（网络头像省略）；命令面板（⇧⌘P）已做；状态栏入口 N/A
   - [x] 仓库最大发现深度可配置
 

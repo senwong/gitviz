@@ -189,6 +189,8 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Stop reviewing this commit", "end-current-review"),
     ("Add branch glob…", "add-glob"),
     ("Fetch into local branch…", "fetch-into"),
+    ("Add repository…", "add-repo"),
+    ("Remove current repository", "remove-repo"),
 ];
 
 fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
@@ -343,6 +345,7 @@ enum PromptAction {
     EditRemote,
     FetchInto,
     CreateAnnotatedTag,
+    AddRepository,
 }
 
 struct DiffView {
@@ -1193,6 +1196,21 @@ impl GraphView {
         self.load(cx);
     }
 
+    /// Removes the active repository from the view (and from the roots if it
+    /// was added as one).
+    fn remove_active_repo(&mut self, cx: &mut Context<Self>) {
+        let Some(repo) = self.active_repo().cloned() else {
+            return;
+        };
+        self.repos.retain(|candidate| candidate.path != repo.path);
+        self.roots.retain(|root| root != &repo.path);
+        if self.active >= self.repos.len() {
+            self.active = self.repos.len().saturating_sub(1);
+        }
+        self.sort_repos();
+        self.load(cx);
+    }
+
     fn export_repo_config(&mut self, cx: &mut Context<Self>) {
         let Some(repo) = self.active_repo().cloned() else {
             return;
@@ -1341,6 +1359,15 @@ impl GraphView {
                     move |repo| git::create_annotated_tag(&repo.path, &tag, &sha, &message),
                     cx,
                 );
+            }
+            PromptAction::AddRepository => {
+                let path = expand_tilde(&name);
+                if path.exists() {
+                    if !self.roots.contains(&path) {
+                        self.roots.push(path);
+                    }
+                    self.rediscover(cx);
+                }
             }
         }
     }
@@ -1784,6 +1811,19 @@ impl GraphView {
                     sha: String::new(),
                 });
                 cx.notify();
+            }
+            "add-repo" => {
+                self.prompt = Some(Prompt {
+                    title: "Add repository (path, ~ allowed)".to_string(),
+                    input: String::new(),
+                    action: PromptAction::AddRepository,
+                    sha: String::new(),
+                });
+                cx.notify();
+            }
+            "remove-repo" => {
+                self.remove_active_repo(cx);
+                return;
             }
             "pr" => {
                 let branch = self.branch.clone().unwrap_or_default();
@@ -2657,6 +2697,8 @@ impl GraphView {
             ("Export configuration to .gitviz.conf", "export-config"),
             ("Add branch glob…", "add-glob"),
             ("Fetch into local branch…", "fetch-into"),
+            ("Add repository…", "add-repo"),
+            ("Remove current repository", "remove-repo"),
             ("Clear branch globs", "clear-globs"),
             ("End all code reviews", "end-reviews"),
         ] {
@@ -3023,6 +3065,18 @@ impl GraphView {
                     action: PromptAction::FetchInto,
                     sha: String::new(),
                 });
+            }
+            "add-repo" => {
+                self.prompt = Some(Prompt {
+                    title: "Add repository (path, ~ allowed)".to_string(),
+                    input: String::new(),
+                    action: PromptAction::AddRepository,
+                    sha: String::new(),
+                });
+            }
+            "remove-repo" => {
+                self.remove_active_repo(cx);
+                return;
             }
             "ref-align" => {
                 self.ref_align = match self.ref_align {
@@ -3657,6 +3711,16 @@ fn parse_emoji_mappings(mappings: &[String]) -> Vec<(String, String)> {
         .collect()
 }
 
+/// Expands a leading `~/` to the user's home directory.
+fn expand_tilde(path: &str) -> std::path::PathBuf {
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = std::env::var_os("HOME")
+    {
+        return std::path::PathBuf::from(home).join(rest);
+    }
+    std::path::PathBuf::from(path)
+}
+
 fn format_date(iso: &str, short: bool) -> String {
     if short {
         iso.chars().take(10).collect()
@@ -4155,5 +4219,27 @@ mod tests {
         let mut filled = Containment::default();
         filled.branches.push("main".to_string());
         assert!(!filled.is_empty());
+    }
+
+    #[test]
+    fn tilde_expansion_only_touches_home_prefix() {
+        assert_eq!(
+            expand_tilde("/absolute/path"),
+            std::path::PathBuf::from("/absolute/path")
+        );
+        assert_eq!(
+            expand_tilde("relative/path"),
+            std::path::PathBuf::from("relative/path")
+        );
+        if let Some(home) = std::env::var_os("HOME") {
+            let home = std::path::PathBuf::from(home);
+            assert_eq!(expand_tilde("~/projects"), home.join("projects"));
+        }
+    }
+
+    #[test]
+    fn command_palette_includes_repo_commands() {
+        assert!(COMMANDS.iter().any(|(_, id)| *id == "add-repo"));
+        assert!(COMMANDS.iter().any(|(_, id)| *id == "remove-repo"));
     }
 }
