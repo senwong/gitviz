@@ -124,6 +124,8 @@ pub struct GraphView {
     fetch_prune: bool,
     fetch_prune_tags: bool,
     show_detail: bool,
+    remembered_selection: std::collections::HashMap<String, String>,
+    pending_select_sha: Option<String>,
     color_preset: usize,
     branch_globs: Vec<String>,
     custom_lane_colors: Vec<String>,
@@ -650,6 +652,8 @@ impl GraphView {
             fetch_prune: false,
             fetch_prune_tags: false,
             show_detail: true,
+            remembered_selection: std::collections::HashMap::new(),
+            pending_select_sha: None,
             color_preset: 0,
             branch_globs: Vec::new(),
             custom_lane_colors: Vec::new(),
@@ -870,7 +874,16 @@ impl GraphView {
         match result.commits {
             Ok(commits) => {
                 self.commits = Arc::new(commits);
-                if self.scroll_to_head_on_load
+                let restored = self.pending_select_sha.take().and_then(|sha| {
+                    self.commits
+                        .iter()
+                        .position(|commit| commit.sha == sha)
+                });
+                if let Some(index) = restored {
+                    self.selected = Some(RowKind::Commit(index));
+                    self.pending_scroll = Some(RowKind::Commit(index));
+                    self.load_detail(index, cx);
+                } else if self.scroll_to_head_on_load
                     && let Some(index) =
                         find_head_commit_index(&self.commits, self.branch.as_deref())
                 {
@@ -1585,6 +1598,18 @@ impl GraphView {
     }
 
     fn switch_to(&mut self, index: usize, cx: &mut Context<Self>) {
+        if let (Some(repo), Some(sha)) = (
+            self.active_repo().map(|repo| repo.path.clone()),
+            self.selected_commit_index()
+                .and_then(|index| self.commits.get(index))
+                .map(|commit| commit.sha.clone()),
+        ) {
+            self.remembered_selection.insert(repo, sha);
+        }
+        self.pending_select_sha = self
+            .repos
+            .get(index)
+            .and_then(|repo| self.remembered_selection.get(&repo.path).cloned());
         self.active = index;
         self.palette.open = false;
         self.palette.query.clear();
