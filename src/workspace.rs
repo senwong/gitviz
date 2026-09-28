@@ -146,6 +146,31 @@ pub fn save_theme(name: &str) {
     let _ = std::fs::write(path, name);
 }
 
+/// Parses a `"<width> <height>"` window-size string, rejecting tiny sizes.
+pub fn parse_window_size(text: &str) -> Option<(f32, f32)> {
+    let mut parts = text.split_whitespace();
+    let width: f32 = parts.next()?.parse().ok()?;
+    let height: f32 = parts.next()?.parse().ok()?;
+    (width >= 400.0 && height >= 300.0).then_some((width, height))
+}
+
+/// The window size used last time, if any.
+pub fn load_window_size() -> Option<(f32, f32)> {
+    let path = settings_path("window")?;
+    parse_window_size(&std::fs::read_to_string(path).ok()?)
+}
+
+/// Remembers the window size.
+pub fn save_window_size(width: f32, height: f32) {
+    let Some(path) = settings_path("window") else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, format!("{width} {height}"));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +202,15 @@ mod tests {
         if let Some(home) = std::env::var_os("HOME") {
             assert_eq!(expand_tilde("~/x"), PathBuf::from(home).join("x"));
         }
+    }
+
+    #[test]
+    fn parses_window_size_rejecting_tiny_sizes() {
+        assert_eq!(parse_window_size("1320 860"), Some((1320., 860.)));
+        assert_eq!(parse_window_size("  1200\n800\n"), Some((1200., 800.)));
+        assert_eq!(parse_window_size("300 200"), None);
+        assert_eq!(parse_window_size("garbage"), None);
+        assert_eq!(parse_window_size(""), None);
     }
 
     #[test]

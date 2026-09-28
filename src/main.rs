@@ -44,7 +44,8 @@ fn main() {
         let search_roots = roots.clone();
         let repos = discovery::discover(&roots);
 
-        let bounds = Bounds::centered(None, size(px(1320.), px(860.)), cx);
+        let (width, height) = gitviz::workspace::load_window_size().unwrap_or((1320., 860.));
+        let bounds = Bounds::centered(None, size(px(width), px(height)), cx);
         cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
