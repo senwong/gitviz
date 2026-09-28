@@ -99,7 +99,7 @@ script/build       cargo 包装脚本
 - 提交操作（当前全部通过右键菜单）
   - [x] Cherry Pick / Revert / Merge / Rebase / Reset(soft/mixed/hard) / Checkout
   - [x] Create Branch / Create Tag Here
-  - [x] Push（当前分支）
+  - [x] Push（当前分支）/ Pull（当前分支）
   - [x] 分支操作（checkout/create/rename/delete/merge/rebase/pull/push）
   - [x] 标签操作（create / create annotated / push / delete UI）
   - [x] 提交 drop、annotated tag 详情（tagger/date/message）

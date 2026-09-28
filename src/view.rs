@@ -180,6 +180,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Refresh (fetch tags)", "refresh"),
     ("Push branch", "push"),
     ("Create pull request", "pr"),
+    ("Pull current branch", "pull"),
     ("Toggle stashes", "toggle-stashes"),
     ("Toggle uncommitted changes", "toggle-uncommitted"),
     ("Branch filter", "branch-filter"),
@@ -1874,6 +1875,7 @@ impl GraphView {
                     let _ = git::open_url(&url);
                 }
             }
+            "pull" => self.run_op(|repo| git::pull(&repo.path), cx),
             "load-more" => {
                 self.loaded = (self.loaded + 500).min(COMMIT_LIMIT);
                 self.load(cx);
@@ -2739,6 +2741,7 @@ impl GraphView {
             ("Fetch into local branch…", "fetch-into"),
             ("Add repository…", "add-repo"),
             ("Remove current repository", "remove-repo"),
+            ("Pull current branch", "pull"),
             ("Clear branch globs", "clear-globs"),
             ("End all code reviews", "end-reviews"),
         ] {
@@ -3122,6 +3125,10 @@ impl GraphView {
             }
             "remove-repo" => {
                 self.remove_active_repo(cx);
+                return;
+            }
+            "pull" => {
+                self.run_op(|repo| git::pull(&repo.path), cx);
                 return;
             }
             "ref-align" => {
