@@ -27,6 +27,8 @@ pub struct RepoConfig {
     pub branch_globs: Vec<String>,
     /// Custom lane colours as `#rrggbb`; empty means use the built-in preset.
     pub lane_colors: Vec<String>,
+    /// Context menu action keys to hide.
+    pub hidden_actions: Vec<String>,
 }
 
 impl Default for RepoConfig {
@@ -49,6 +51,7 @@ impl Default for RepoConfig {
             repo_order: "name".to_string(),
             branch_globs: Vec::new(),
             lane_colors: Vec::new(),
+            hidden_actions: Vec::new(),
         }
     }
 }
@@ -94,6 +97,9 @@ impl RepoConfig {
                 "lane_colors" => {
                     config.lane_colors = split_list(value);
                 }
+                "hidden_actions" => {
+                    config.hidden_actions = split_list(value);
+                }
                 _ => {}
             }
         }
@@ -123,6 +129,10 @@ impl RepoConfig {
         output.push_str(&format!("repo_order={}\n", self.repo_order));
         output.push_str(&format!("branch_globs={}\n", self.branch_globs.join(";")));
         output.push_str(&format!("lane_colors={}\n", self.lane_colors.join(";")));
+        output.push_str(&format!(
+            "hidden_actions={}\n",
+            self.hidden_actions.join(";")
+        ));
         std::fs::write(Self::path(repo), output)?;
         Ok(())
     }
@@ -156,6 +166,7 @@ mod tests {
         config.repo_order = "path".to_string();
         config.branch_globs = vec!["heads/feature/*".to_string(), "heads/fix/*".to_string()];
         config.lane_colors = vec!["#e06c75".to_string(), "#61afef".to_string()];
+        config.hidden_actions = vec!["revert".to_string()];
         config.save(&dir).unwrap();
 
         let loaded = RepoConfig::load(&dir).unwrap();
@@ -164,6 +175,7 @@ mod tests {
         assert_eq!(loaded.repo_order, "path");
         assert_eq!(loaded.branch_globs.len(), 2);
         assert_eq!(loaded.lane_colors, vec!["#e06c75", "#61afef"]);
+        assert_eq!(loaded.hidden_actions, vec!["revert"]);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

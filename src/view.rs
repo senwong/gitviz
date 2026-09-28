@@ -83,6 +83,7 @@ pub struct GraphView {
     color_preset: usize,
     branch_globs: Vec<String>,
     custom_lane_colors: Vec<String>,
+    hidden_actions: Vec<String>,
     date_short: bool,
     date_width: f32,
     author_width: f32,
@@ -179,6 +180,33 @@ fn filter_commands(query: &str) -> Vec<(&'static str, &'static str)> {
 fn find_parent_index(commits: &[Commit], index: usize) -> Option<usize> {
     let parent = commits.get(index)?.parents.first()?.clone();
     commits.iter().position(|commit| commit.sha == parent)
+}
+
+fn find_alt_parent_index(commits: &[Commit], index: usize) -> Option<usize> {
+    let parent = commits.get(index)?.parents.get(1)?.clone();
+    commits.iter().position(|commit| commit.sha == parent)
+}
+
+fn find_alt_child_index(commits: &[Commit], index: usize) -> Option<usize> {
+    let sha = commits.get(index)?.sha.clone();
+    (0..index).rev().find(|&candidate| {
+        commits[candidate]
+            .parents
+            .iter()
+            .skip(1)
+            .any(|parent| parent == &sha)
+    })
+}
+
+fn gravatar_url(email: &str) -> Option<String> {
+    let email = email.trim().to_lowercase();
+    if email.is_empty() {
+        return None;
+    }
+    let hash = format!("{:x}", md5::compute(email.as_bytes()));
+    Some(format!(
+        "https://www.gravatar.com/avatar/{hash}?s=64&d=identicon"
+    ))
 }
 
 fn find_child_index(commits: &[Commit], index: usize) -> Option<usize> {
@@ -353,6 +381,43 @@ impl MenuAction {
             MenuAction::DiscardChanges => "Discard Changes (reset --hard)",
         }
     }
+
+    /// Stable key used to hide actions via `.gitviz.conf`.
+    fn key(self) -> &'static str {
+        match self {
+            MenuAction::CherryPick => "cherry-pick",
+            MenuAction::CherryPickEmpty => "cherry-pick-empty",
+            MenuAction::Revert => "revert",
+            MenuAction::Merge => "merge",
+            MenuAction::MergeNoFf => "merge-no-ff",
+            MenuAction::MergeSquash => "merge-squash",
+            MenuAction::Rebase => "rebase",
+            MenuAction::ResetSoft => "reset-soft",
+            MenuAction::ResetMixed => "reset-mixed",
+            MenuAction::ResetHard => "reset-hard",
+            MenuAction::Checkout => "checkout",
+            MenuAction::Drop => "drop",
+            MenuAction::CreateBranch => "create-branch",
+            MenuAction::CreateTag => "create-tag",
+            MenuAction::Push => "push",
+            MenuAction::CopySha => "copy-sha",
+            MenuAction::CopyMessage => "copy-message",
+            MenuAction::StashApply => "stash-apply",
+            MenuAction::StashPop => "stash-pop",
+            MenuAction::StashDrop => "stash-drop",
+            MenuAction::StashBranch => "stash-branch",
+            MenuAction::StashChanges => "stash-changes",
+            MenuAction::DiscardChanges => "discard-changes",
+        }
+    }
+}
+
+fn visible_actions(items: &[MenuAction], hidden: &[String]) -> Vec<MenuAction> {
+    items
+        .iter()
+        .copied()
+        .filter(|action| !hidden.iter().any(|key| key == action.key()))
+        .collect()
 }
 
 #[derive(Default)]
@@ -400,6 +465,7 @@ impl GraphView {
             color_preset: 0,
             branch_globs: Vec::new(),
             custom_lane_colors: Vec::new(),
+            hidden_actions: Vec::new(),
             date_short: false,
             date_width: 150.,
             author_width: 130.,
@@ -700,18 +766,28 @@ impl GraphView {
                     return;
                 }
                 "up" => {
-                    if let Some(index) = self.selected_commit_index()
-                        && let Some(parent) = find_parent_index(&self.commits, index)
-                    {
-                        self.select_row(RowKind::Commit(parent), cx);
+                    if let Some(index) = self.selected_commit_index() {
+                        let target = if keystroke.modifiers.shift {
+                            find_alt_parent_index(&self.commits, index)
+                        } else {
+                            find_parent_index(&self.commits, index)
+                        };
+                        if let Some(target) = target {
+                            self.select_row(RowKind::Commit(target), cx);
+                        }
                     }
                     return;
                 }
                 "down" => {
-                    if let Some(index) = self.selected_commit_index()
-                        && let Some(child) = find_child_index(&self.commits, index)
-                    {
-                        self.select_row(RowKind::Commit(child), cx);
+                    if let Some(index) = self.selected_commit_index() {
+                        let target = if keystroke.modifiers.shift {
+                            find_alt_child_index(&self.commits, index)
+                        } else {
+                            find_child_index(&self.commits, index)
+                        };
+                        if let Some(target) = target {
+                            self.select_row(RowKind::Commit(target), cx);
+                        }
                     }
                     return;
                 }
@@ -971,6 +1047,7 @@ impl GraphView {
         self.repo_order = RepoOrder::from_str(&config.repo_order);
         self.branch_globs = config.branch_globs;
         self.custom_lane_colors = config.lane_colors;
+        self.hidden_actions = config.hidden_actions;
     }
 
     fn sort_repos(&mut self) {
@@ -1021,6 +1098,7 @@ impl GraphView {
             repo_order: self.repo_order.as_str().to_string(),
             branch_globs: self.branch_globs.clone(),
             lane_colors: self.custom_lane_colors.clone(),
+            hidden_actions: self.hidden_actions.clone(),
         };
         match config.save(&repo.path) {
             Ok(()) => {
@@ -1144,6 +1222,7 @@ impl GraphView {
                 vec![MenuAction::StashChanges, MenuAction::DiscardChanges],
             ),
         };
+        let items = visible_actions(&items, &self.hidden_actions);
         self.menu = Some(Menu {
             x,
             y,
@@ -1586,7 +1665,7 @@ impl GraphView {
                     .py_1()
                     .gap_2()
                     .items_center()
-                    .child(avatar_circle(&detail.author, &theme))
+                    .child(avatar_circle(&detail.author, &detail.email, weak.clone(), &theme))
                     .child(div().text_sm().text_color(theme.text_muted).child({
                         let mut meta = format!("{} <{}>", detail.author, detail.email);
                         if let Some(signature) = self.signature {
@@ -3196,7 +3275,12 @@ fn indent_wrap(depth: usize, child: AnyElement) -> AnyElement {
         .into_any_element()
 }
 
-fn avatar_circle(name: &str, theme: &Theme) -> AnyElement {
+fn avatar_circle(
+    name: &str,
+    email: &str,
+    _weak: gpui::WeakEntity<GraphView>,
+    theme: &Theme,
+) -> AnyElement {
     let initial = name
         .chars()
         .next()
@@ -3206,7 +3290,9 @@ fn avatar_circle(name: &str, theme: &Theme) -> AnyElement {
         .bytes()
         .fold(0u32, |acc, byte| acc.wrapping_mul(31).wrapping_add(byte as u32));
     let color = theme.lane_colors[(hash as usize) % theme.lane_colors.len()];
+    let url = gravatar_url(email);
     div()
+        .id(format!("avatar-{}", name))
         .w(px(20.))
         .h(px(20.))
         .rounded_full()
@@ -3216,6 +3302,12 @@ fn avatar_circle(name: &str, theme: &Theme) -> AnyElement {
         .bg(color)
         .text_sm()
         .text_color(theme.bg)
+        .when_some(url, |this, url| {
+            this.cursor_pointer().on_click(move |_: &ClickEvent, _window, cx| {
+                cx.stop_propagation();
+                let _ = git::open_url(&url);
+            })
+        })
         .child(initial)
         .into_any_element()
 }
@@ -3486,6 +3578,44 @@ mod tests {
             format_date("2024-05-01 10:00:00 +0000", false),
             "2024-05-01 10:00:00 +0000"
         );
+    }
+
+    #[test]
+    fn gravatar_url_hashes_email() {
+        let url = gravatar_url("Test@Example.com ").unwrap();
+        assert!(
+            url.contains("55502f40dc8b7c769880b10874abc9d0"),
+            "url was {url}"
+        );
+        assert!(gravatar_url("").is_none());
+    }
+
+    #[test]
+    fn alt_parent_and_child_navigation() {
+        let mut merge = commit("m", "M", "x");
+        merge.parents = vec!["a".to_string(), "b".to_string()];
+        let mut a = commit("a", "A", "x");
+        a.parents = vec!["c".to_string()];
+        let mut b = commit("b", "B", "x");
+        b.parents = vec!["c".to_string()];
+        let c = commit("c", "C", "x");
+        let commits = vec![merge, a, b, c];
+
+        assert_eq!(find_alt_parent_index(&commits, 0), Some(2));
+        assert_eq!(find_alt_child_index(&commits, 2), Some(0));
+    }
+
+    #[test]
+    fn menu_visibility_filters_hidden() {
+        let items = vec![
+            MenuAction::CherryPick,
+            MenuAction::Revert,
+            MenuAction::Merge,
+        ];
+        let hidden = vec!["revert".to_string()];
+        let visible = visible_actions(&items, &hidden);
+        assert_eq!(visible.len(), 2);
+        assert!(!visible.iter().any(|action| action.key() == "revert"));
     }
 
     #[test]
