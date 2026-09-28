@@ -1130,6 +1130,17 @@ impl GraphView {
                     return;
                 }
                 "f" => self.search_active = !self.search_active,
+                "o" => {
+                    self.on_chip(
+                        if keystroke.modifiers.shift {
+                            "open-workspace"
+                        } else {
+                            "open-repo"
+                        },
+                        cx,
+                    );
+                    return;
+                }
                 "b" => {
                     self.branch_filter.open = !self.branch_filter.open;
                     if self.branch_filter.open {
