@@ -1583,6 +1583,8 @@ impl GraphView {
             author: config.columns_author,
             commit: config.columns_commit,
         };
+        self.file_tree = config.file_tree;
+        self.compact_folders = config.compact_folders;
         self.repo_order = RepoOrder::from_str(&config.repo_order);
         self.branch_globs = config.branch_globs;
         self.custom_lane_colors = config.lane_colors;
@@ -1765,6 +1767,8 @@ impl GraphView {
             columns_date: self.columns.date,
             columns_author: self.columns.author,
             columns_commit: self.columns.commit,
+            file_tree: self.file_tree,
+            compact_folders: self.compact_folders,
             repo_order: self.repo_order.as_str().to_string(),
             branch_globs: self.branch_globs.clone(),
             lane_colors: self.custom_lane_colors.clone(),

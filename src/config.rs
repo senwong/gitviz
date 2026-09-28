@@ -22,6 +22,8 @@ pub struct RepoConfig {
     pub columns_date: bool,
     pub columns_author: bool,
     pub columns_commit: bool,
+    pub file_tree: bool,
+    pub compact_folders: bool,
     pub repo_order: String,
     /// Branch glob patterns (e.g. `heads/feature/*`); empty means show all.
     pub branch_globs: Vec<String>,
@@ -56,6 +58,8 @@ impl Default for RepoConfig {
             columns_date: true,
             columns_author: true,
             columns_commit: true,
+            file_tree: false,
+            compact_folders: true,
             repo_order: "name".to_string(),
             branch_globs: Vec::new(),
             lane_colors: Vec::new(),
@@ -102,6 +106,8 @@ impl RepoConfig {
                 "columns_date" => config.columns_date = flag,
                 "columns_author" => config.columns_author = flag,
                 "columns_commit" => config.columns_commit = flag,
+                "file_tree" => config.file_tree = flag,
+                "compact_folders" => config.compact_folders = flag,
                 "repo_order" => config.repo_order = value.to_string(),
                 "branch_globs" => {
                     config.branch_globs = split_list(value);
@@ -141,6 +147,8 @@ impl RepoConfig {
             ("columns_date", self.columns_date),
             ("columns_author", self.columns_author),
             ("columns_commit", self.columns_commit),
+            ("file_tree", self.file_tree),
+            ("compact_folders", self.compact_folders),
         ] {
             output.push_str(&format!("{key}={value}\n"));
         }
@@ -194,6 +202,8 @@ mod tests {
         config.hidden_actions = vec!["revert".to_string()];
         config.emoji_mappings = vec!["shipit:🚢".to_string()];
         config.graph_style = "angular".to_string();
+        config.file_tree = true;
+        config.compact_folders = false;
         config.pr_provider = "https://git.example.com/{owner}/{repo}/compare/{base}...{head}".to_string();
         config.issue_provider = "https://bugs.example.com/{issue}".to_string();
         config.save(&dir).unwrap();
@@ -206,6 +216,8 @@ mod tests {
         assert_eq!(loaded.lane_colors, vec!["#e06c75", "#61afef"]);
         assert_eq!(loaded.hidden_actions, vec!["revert"]);
         assert_eq!(loaded.emoji_mappings, vec!["shipit:🚢"]);
+        assert!(loaded.file_tree);
+        assert!(!loaded.compact_folders);
         assert_eq!(loaded.graph_style, "angular");
         assert_eq!(
             loaded.pr_provider,
