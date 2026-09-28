@@ -325,6 +325,19 @@ pub fn local_branches(repo: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Remote-tracking branches (`origin/main`, ...), excluding symbolic
+/// `*/HEAD` entries.
+pub fn remote_branches(repo: &Path) -> Vec<String> {
+    run(repo, &["branch", "-r", "--format=%(refname:short)"])
+        .map(|output| {
+            lines(&output)
+                .into_iter()
+                .filter(|name| !name.ends_with("/HEAD"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Parses `git rev-list --left-right --count <branch>...HEAD` output of the
 /// form `"<ahead>\t<behind>"` into `(ahead, behind)`.
 ///

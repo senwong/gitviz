@@ -62,6 +62,7 @@ struct LoadResult {
     branch: Option<String>,
     head_ancestors: HashSet<String>,
     local_branches: Vec<String>,
+    remote_branches: Vec<String>,
     remotes: Vec<String>,
     remote_info: Option<RemoteInfo>,
     tags: Vec<git::TagDetail>,
@@ -161,6 +162,7 @@ pub struct GraphView {
     prompt: Option<Prompt>,
     menu: Option<Menu>,
     branch_filter: BranchFilter,
+    remote_branches: Vec<String>,
     branch_tracking: std::collections::HashMap<String, (usize, usize)>,
     settings_open: bool,
     search_active: bool,
@@ -664,6 +666,7 @@ impl GraphView {
             prompt: None,
             menu: None,
             branch_filter: BranchFilter::default(),
+            remote_branches: Vec::new(),
             branch_tracking: std::collections::HashMap::new(),
             settings_open: false,
             search_active: false,
@@ -790,6 +793,7 @@ impl GraphView {
                 branch: git::head_branch(&repo.path),
                 head_ancestors: git::head_ancestors(&repo.path, 50_000),
                 local_branches: git::local_branches(&repo.path),
+                remote_branches: git::remote_branches(&repo.path),
                 remotes: git::remotes(&repo.path),
                 remote_info: git::hosting_remote(&repo.path),
                 tags: git::tags_with_details(&repo.path),
@@ -824,6 +828,7 @@ impl GraphView {
         self.branch = result.branch;
         self.head_ancestors = Arc::new(result.head_ancestors);
         self.branch_filter.all = result.local_branches;
+        self.remote_branches = result.remote_branches;
         self.remotes = result.remotes;
         self.remote_info = result.remote_info;
         self.tags = result.tags;
@@ -3920,7 +3925,41 @@ impl GraphView {
             self.branch_filter.query.clone()
         };
 
-        overlay(theme.clone(), 120., 600., overlay_close(weak.clone()), vec![
+        let remote_items: Vec<AnyElement> = self
+            .remote_branches
+            .iter()
+            .map(|name| {
+                let copy_name = name.clone();
+                let theme_row = theme.clone();
+                h_flex()
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .gap_2()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_color(theme.text)
+                            .child(name.clone()),
+                    )
+                    .child(action_button(
+                        format!("remote-branch-copy-{name}"),
+                        "Copy",
+                        &theme_row,
+                        move |cx| {
+                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                copy_name.clone(),
+                            ));
+                        },
+                    ))
+                    .into_any_element()
+            })
+            .collect();
+
+        let mut children: Vec<AnyElement> = vec![
             h_flex()
                 .w_full()
                 .px_3()
@@ -3932,6 +3971,7 @@ impl GraphView {
                 .child(query_line)
                 .child(caret(&theme, self.caret_on))
                 .into_any_element(),
+            section_label(&theme, "Local branches"),
             show_all,
             v_flex()
                 .id("branch-filter-list")
@@ -3939,8 +3979,27 @@ impl GraphView {
                 .overflow_y_scroll()
                 .children(items)
                 .into_any_element(),
-            overlay_hint(&theme, "Enter/Esc to close"),
-        ])
+        ];
+        if !remote_items.is_empty() {
+            children.push(section_label(&theme, "Remote branches"));
+            children.push(
+                v_flex()
+                    .id("remote-branch-list")
+                    .w_full()
+                    .overflow_y_scroll()
+                    .children(remote_items)
+                    .into_any_element(),
+            );
+        }
+        children.push(overlay_hint(&theme, "Enter/Esc to close"));
+
+        overlay(
+            theme.clone(),
+            120.,
+            600.,
+            overlay_close(weak.clone()),
+            children,
+        )
     }
 
     fn render_settings(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {

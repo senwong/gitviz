@@ -380,6 +380,38 @@ fn discards_uncommitted_changes() {
 }
 
 #[test]
+fn lists_remote_branches() {
+    let origin = TempRepo::new("remotebr-src");
+    origin.commit("a.txt", "1\n", "one");
+    git::create_branch(&origin.path, "feature", None).unwrap();
+    git::checkout_branch(&origin.path, "main").unwrap();
+
+    let bare = std::env::temp_dir().join(format!(
+        "gitviz-it-remotebr-bare-{}-{}",
+        std::process::id(),
+        nanos()
+    ));
+    let _ = std::fs::remove_dir_all(&bare);
+    let output = Command::new("git")
+        .args(["clone", "--bare", "-q"])
+        .arg(&origin.path)
+        .arg(&bare)
+        .output()
+        .expect("failed to clone --bare");
+    assert!(output.status.success());
+
+    let local = TempRepo::new("remotebr-dst");
+    git::add_remote(&local.path, "origin", bare.to_str().unwrap()).unwrap();
+    git_run(&local.path, &["fetch", "origin"]);
+
+    let branches = git::remote_branches(&local.path);
+    assert!(branches.iter().any(|branch| branch == "origin/feature"));
+    assert!(!branches.iter().any(|branch| branch.ends_with("/HEAD")));
+
+    let _ = std::fs::remove_dir_all(&bare);
+}
+
+#[test]
 fn remotes_are_readable() {
     let repo = TempRepo::new("remote");
     repo.commit("a.txt", "1\n", "one");
