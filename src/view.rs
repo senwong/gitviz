@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use gpui::{
     AnyElement, App, Bounds, ClickEvent, Context, Div, ExternalPaths, FocusHandle, IntoElement,
-    KeyDownEvent, MouseButton, MouseDownEvent, PathPromptOptions, Pixels, Render,
-    UniformListScrollHandle, Window, div, point, prelude::*, px, uniform_list,
+    KeyDownEvent, ListAlignment, ListState, MouseButton, MouseDownEvent, PathPromptOptions, Pixels,
+    Render, Window, div, list, point, prelude::*, px,
 };
 
 use crate::actions::*;
@@ -129,7 +129,8 @@ pub struct GraphView {
     relative_dates: bool,
     resize_drag: Option<ResizeDrag>,
     scroll_to_head_on_load: bool,
-    scroll_handle: UniformListScrollHandle,
+    list_state: ListState,
+    pending_scroll: Option<RowKind>,
     date_width: f32,
     author_width: f32,
     commit_width: f32,
@@ -601,7 +602,8 @@ impl GraphView {
             relative_dates: false,
             resize_drag: None,
             scroll_to_head_on_load: false,
-            scroll_handle: UniformListScrollHandle::new(),
+            list_state: ListState::new(0, ListAlignment::Top, px(1000.)),
+            pending_scroll: None,
             date_width: 150.,
             author_width: 130.,
             commit_width: 80.,
@@ -798,6 +800,7 @@ impl GraphView {
                         find_head_commit_index(&self.commits, self.branch.as_deref())
                 {
                     self.selected = Some(RowKind::Commit(index));
+                    self.pending_scroll = Some(RowKind::Commit(index));
                 }
             }
             Err(error) => self.error = Some(error),
@@ -844,6 +847,9 @@ impl GraphView {
             rows.push(RowKind::Commit(index));
         }
         self.rows = rows;
+        // Rows can have different heights (ref labels wrap), so use a
+        // variable-height list and reset it whenever the row set changes.
+        self.list_state = ListState::new(self.rows.len(), ListAlignment::Top, px(1000.));
         self.rows_dirty = false;
     }
 
@@ -1343,6 +1349,7 @@ impl GraphView {
             })
         {
             self.selected = self.rows.get(position).copied();
+            self.list_state.scroll_to_reveal_item(position);
         }
     }
 
@@ -1945,6 +1952,11 @@ impl Render for GraphView {
         if self.rows_dirty {
             self.rebuild_rows();
         }
+        if let Some(row) = self.pending_scroll.take()
+            && let Some(position) = self.rows.iter().position(|candidate| *candidate == row)
+        {
+            self.list_state.scroll_to_reveal_item(position);
+        }
         if !self.search_query.is_empty() {
             self.matches = find_matches(&self.commits, &self.search_query);
             if self.match_cursor >= self.matches.len() {
@@ -1957,15 +1969,9 @@ impl Render for GraphView {
         }
         // Automatically load more commits when scrolled near the bottom.
         if self.loaded < COMMIT_LIMIT && self.commits.len() >= self.loaded {
-            let at_bottom = {
-                let state = self.scroll_handle.0.borrow();
-                near_bottom(
-                    state.base_handle.offset().y.as_f32(),
-                    state.base_handle.max_offset().y.as_f32(),
-                    120.,
-                )
-            };
-            if at_bottom {
+            let max = self.list_state.max_offset_for_scrollbar().y.as_f32();
+            let current = -self.list_state.scroll_px_offset_for_scrollbar().y.as_f32();
+            if near_bottom(current, max, 200.) {
                 self.loaded = (self.loaded + 500).min(COMMIT_LIMIT);
                 self.load(cx);
             }
@@ -2086,12 +2092,9 @@ impl Render for GraphView {
         } else {
             let ctx = Arc::new(row_ctx);
             let weak = cx.weak_entity();
-            uniform_list("commits", ctx.rows.len(), move |range, _window, _cx| {
-                range
-                    .map(|position| ctx.render_row(position, weak.clone()))
-                    .collect::<Vec<_>>()
+            list(self.list_state.clone(), move |position, _window, _cx| {
+                ctx.render_row(position, weak.clone())
             })
-            .track_scroll(&self.scroll_handle)
             .flex_1()
             .into_any_element()
         };
@@ -4632,29 +4635,21 @@ impl RowRenderContext {
                 paint_lanes(&mut *window, bounds, &commit, &colors, graph_style);
             },
         )
-        .w(lane_area_px)
-        .h(px(ROW_HEIGHT));
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full();
 
-        let dot_left = px(commit.lane as f32 * LANE_WIDTH + (LANE_WIDTH - DOT_SIZE) / 2.0);
-        let dot_top = px((ROW_HEIGHT - DOT_SIZE) / 2.0);
+        let dot_left = commit.lane as f32 * LANE_WIDTH + (LANE_WIDTH - DOT_SIZE) / 2.0;
 
         let is_current_match = self.matches.get(self.match_cursor) == Some(&index);
         let is_match = self.matches.contains(&index);
-        // Cap the number of ref pills so a commit with many tags does not
-        // overflow into the Date column.
-        let labels: Vec<String> = format_refs(&commit.refs, self.combine_refs, self.ref_align)
+        // Show every ref, wrapping onto multiple lines rather than truncating.
+        let ref_pills: Vec<AnyElement> = format_refs(&commit.refs, self.combine_refs, self.ref_align)
             .iter()
             .flat_map(|entry| split_ref_entry(entry))
+            .map(|label| ref_pill(&label, theme))
             .collect();
-        const MAX_PILLS: usize = 3;
-        let mut ref_pills: Vec<AnyElement> = labels
-            .iter()
-            .take(MAX_PILLS)
-            .map(|label| ref_pill(label, theme))
-            .collect();
-        if labels.len() > MAX_PILLS {
-            ref_pills.push(ref_pill(&format!("+{}", labels.len() - MAX_PILLS), theme));
-        }
         let subject = if self.emoji_enabled {
             emoji::replace_with(&commit.subject, &self.custom_emoji)
         } else {
@@ -4674,11 +4669,13 @@ impl RowRenderContext {
             format_date(&date, self.date_short)
         };
 
-        h_flex()
+        div()
+            .flex()
+            .flex_row()
+            .items_stretch()
             .id(("commit", index))
-            .h(px(ROW_HEIGHT))
+            .min_h(px(ROW_HEIGHT))
             .w_full()
-            .items_center()
             .when(
                 !is_selected && self.hovered == Some(RowKind::Commit(index)),
                 |this| this.bg(theme.hover),
@@ -4723,18 +4720,29 @@ impl RowRenderContext {
             .child(
                 div()
                     .relative()
+                    .flex_shrink_0()
                     .w(lane_area_px)
-                    .h(px(ROW_HEIGHT))
+                    .self_stretch()
                     .child(canvas)
                     .child(
+                        // A fixed row of spacer + dot, vertically centered, so
+                        // the dot stays centered for any (wrapped) row height.
                         div()
                             .absolute()
-                            .left(dot_left)
-                            .top(dot_top)
-                            .w(px(DOT_SIZE))
-                            .h(px(DOT_SIZE))
-                            .rounded_full()
-                            .bg(colors[commit.lane % colors.len()]),
+                            .top_0()
+                            .left_0()
+                            .size_full()
+                            .flex()
+                            .flex_row()
+                            .items_center()
+                            .child(div().w(px(dot_left)))
+                            .child(
+                                div()
+                                    .w(px(DOT_SIZE))
+                                    .h(px(DOT_SIZE))
+                                    .rounded_full()
+                                    .bg(colors[commit.lane % colors.len()]),
+                            ),
                     ),
             )
             .child(
@@ -4742,11 +4750,11 @@ impl RowRenderContext {
                     .flex_1()
                     .min_w_0()
                     .gap_1()
-                    .overflow_hidden()
+                    .flex_wrap()
+                    .py_0p5()
                     .children(ref_pills)
                     .child(
                         div()
-                            .flex_1()
                             .min_w_0()
                             .truncate()
                             .text_sm()
