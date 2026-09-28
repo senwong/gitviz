@@ -98,6 +98,8 @@
   - 详情面板：顶部“短 SHA + 主题”头部，正文只渲染 body（不重复 subject），contained-in 用 pill，文件区加分隔
   - 性能：`load()`/`load_detail()` 都改为**后台线程**（`background_spawn` + 代际号丢弃过期结果）；ahead/behind 惰性；hover 不再触发 git；选中的行会**自动滚动进视野**
 - 验证（最新）：全量 **75 单测 + 23 集成 = 98 项全部通过**。
+- 性能与体验续：`commits/head_ancestors/status/stashes` 改为 `Arc` 共享（**消除每帧深拷贝**）；搜索匹配只在变更时重算（`search_dirty`）；车道数缓存（`lane_count`）；`load_detail` 也走后台线程；选中行自动滚动进视野。
+- 其它：新增 CLI `--head`（打开即选中 HEAD 并显示详情）；`find_head_commit_index` 支持 `HEAD -> branch`；默认窗口 1320×860 + 最小尺寸 900×560；详情面板宽 400；Esc 关闭详情/对比视图；空状态（No matching commits / No commits / Loading…）；弹层按键提示。
 
 ## 文件结构
 

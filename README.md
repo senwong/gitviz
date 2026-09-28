@@ -38,7 +38,9 @@ cd ~/projects/gitviz
 ./script/build run -- ~/projects/jp-cms ~/projects/umu_node
 ```
 
-不带参数时，默认扫描当前工作目录。
+不带参数时，默认扫描当前工作目录（Finder/`open` 启动则为上次打开的仓库）。
+
+可选：`--head` 会在打开时自动选中 HEAD 提交并显示其详情。
 
 ```sh
 # release 构建（更小更快，编译更久）
