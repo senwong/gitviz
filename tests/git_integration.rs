@@ -147,6 +147,21 @@ fn stash_workflow() {
 }
 
 #[test]
+fn lists_and_diffs_stash_contents() {
+    let repo = TempRepo::new("stashdetail");
+    repo.commit("a.txt", "1\n", "one");
+
+    std::fs::write(repo.path.join("a.txt"), "1\n2\n").unwrap();
+    git::stash_push(&repo.path, true).unwrap();
+
+    let files = git::stash_files(&repo.path, 0);
+    assert!(files.iter().any(|file| file.path == "a.txt"));
+
+    let diff = git::stash_file_diff(&repo.path, 0, "a.txt");
+    assert!(diff.contains("+2"), "diff was: {diff}");
+}
+
+#[test]
 fn commit_detail_reports_changed_files() {
     let repo = TempRepo::new("detail");
     repo.commit("a.txt", "1\n", "one");

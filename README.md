@@ -118,6 +118,7 @@ script/build       cargo 包装脚本
 - 未提交变更
   - [x] 显示与选择、查看文件列表
   - [x] Stash 操作（push/apply/pop/drop/branch）+ 未提交变更的 Stash/Discard
+  - [x] Stash 详情：文件列表 + 每个文件的 diff（`git stash show`）
 - 悬浮提示
   - [x] 是否属于 HEAD 祖先（颜色 + 底部信息条 “in HEAD / not in HEAD”）
   - [x] 详情显示包含该提交的分支/标签；悬浮信息条显示 refs / HEAD，并懒加载并缓存 “contained in: 分支/标签”

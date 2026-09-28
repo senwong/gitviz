@@ -74,6 +74,7 @@ pub struct GraphView {
     compare_worktree: bool,
     detail: Option<CommitDetail>,
     detail_sha: Option<String>,
+    detail_stash: Option<usize>,
     compare_files: Vec<ChangedFile>,
     tags: Vec<git::TagDetail>,
     file_tree: bool,
@@ -516,6 +517,7 @@ impl GraphView {
             compare_worktree: false,
             detail: None,
             detail_sha: None,
+            detail_stash: None,
             compare_files: Vec::new(),
             tags: Vec::new(),
             file_tree: false,
@@ -596,6 +598,7 @@ impl GraphView {
         self.branch = None;
         self.detail = None;
         self.detail_sha = None;
+        self.detail_stash = None;
         self.compare = None;
         self.compare_worktree = false;
         self.compare_files.clear();
@@ -707,6 +710,7 @@ impl GraphView {
     fn load_detail(&mut self, commit_index: usize, cx: &mut Context<Self>) {
         self.detail = None;
         self.detail_sha = None;
+        self.detail_stash = None;
         self.compare_files.clear();
         let Some(commit) = self.commits.get(commit_index) else {
             return;
@@ -746,6 +750,7 @@ impl GraphView {
                     .status
                     .iter()
                     .map(|entry| ChangedFile {
+                        status: status_entry_letter(entry),
                         added: 0,
                         removed: 0,
                         path: entry.path.clone(),
@@ -762,13 +767,22 @@ impl GraphView {
             }
             RowKind::Stash(index) => {
                 self.selected = Some(row);
+                self.compare = None;
+                self.compare_worktree = false;
+                self.detail_sha = None;
+                self.detail_stash = Some(index);
                 let message = self
                     .stashes
                     .get(index)
                     .map(|stash| stash.message.clone())
                     .unwrap_or_default();
+                let files = self
+                    .active_repo()
+                    .map(|repo| git::stash_files(&repo.path, index))
+                    .unwrap_or_default();
                 self.detail = Some(CommitDetail {
                     message: format!("stash@{{{index}}}: {message}"),
+                    files,
                     ..CommitDetail::default()
                 });
                 cx.notify();
@@ -3256,6 +3270,17 @@ fn render_file_row(
 
 impl GraphView {
     fn open_diff(&mut self, path: &str, cx: &mut Context<Self>) {
+        if let Some(index) = self.detail_stash {
+            if let Some(repo) = self.active_repo() {
+                let text = git::stash_file_diff(&repo.path, index, path);
+                self.diff = Some(DiffView {
+                    title: format!("stash@{{{index}}} — {path}"),
+                    text: Arc::new(text),
+                });
+                cx.notify();
+            }
+            return;
+        }
         let Some(sha) = self.detail_sha.clone() else {
             return;
         };
@@ -3719,6 +3744,17 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
         return std::path::PathBuf::from(home).join(rest);
     }
     std::path::PathBuf::from(path)
+}
+
+/// Picks the single-letter status to show for an uncommitted file.
+fn status_entry_letter(entry: &StatusEntry) -> char {
+    if entry.is_untracked() {
+        'A'
+    } else if entry.worktree_status != ' ' && entry.worktree_status != '?' {
+        entry.worktree_status
+    } else {
+        entry.index_status
+    }
 }
 
 fn format_date(iso: &str, short: bool) -> String {
@@ -4241,5 +4277,29 @@ mod tests {
     fn command_palette_includes_repo_commands() {
         assert!(COMMANDS.iter().any(|(_, id)| *id == "add-repo"));
         assert!(COMMANDS.iter().any(|(_, id)| *id == "remove-repo"));
+    }
+
+    #[test]
+    fn uncommitted_status_letter_prefers_worktree_change() {
+        let untracked = StatusEntry {
+            index_status: '?',
+            worktree_status: '?',
+            path: "new.txt".to_string(),
+        };
+        assert_eq!(status_entry_letter(&untracked), 'A');
+
+        let modified = StatusEntry {
+            index_status: ' ',
+            worktree_status: 'M',
+            path: "a.txt".to_string(),
+        };
+        assert_eq!(status_entry_letter(&modified), 'M');
+
+        let staged = StatusEntry {
+            index_status: 'D',
+            worktree_status: ' ',
+            path: "gone.txt".to_string(),
+        };
+        assert_eq!(status_entry_letter(&staged), 'D');
     }
 }

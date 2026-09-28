@@ -551,12 +551,31 @@ fn parse_numstat(output: &str) -> Vec<ChangedFile> {
             let removed = columns.next()?.parse().ok()?;
             let path = columns.next()?.to_string();
             Some(ChangedFile {
+                status: 'M',
                 added,
                 removed,
                 path,
             })
         })
         .collect()
+}
+
+/// Files changed by a stash, from `git stash show --numstat`.
+pub fn stash_files(repo: &Path, index: usize) -> Vec<ChangedFile> {
+    let stash = format!("stash@{{{index}}}");
+    let output = run(repo, &["stash", "show", "--numstat", &stash]).unwrap_or_default();
+    parse_numstat(&output)
+}
+
+/// Unified diff of a single file in a stash, comparing against the stash's
+/// first parent (its base commit).
+pub fn stash_file_diff(repo: &Path, index: usize, path: &str) -> String {
+    let stash = format!("stash@{{{index}}}");
+    run(
+        repo,
+        &["diff", "--no-color", &format!("{stash}^1"), &stash, "--", path],
+    )
+    .unwrap_or_default()
 }
 
 pub fn delete_branch(repo: &Path, name: &str, force: bool) -> anyhow::Result<()> {
