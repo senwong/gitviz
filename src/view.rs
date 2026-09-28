@@ -2238,7 +2238,10 @@ impl Render for GraphView {
         });
         let branch_filter = self.branch_filter.open.then(|| self.render_branch_filter(weak.clone()));
         let settings = self.settings_open.then(|| self.render_settings(weak.clone()));
-        let diff = self.diff.as_ref().map(|view| self.render_diff(view));
+        let diff = self
+            .diff
+            .as_ref()
+            .map(|view| self.render_diff(view, cx));
         let recent = self.recent_menu.open.then(|| self.render_recent(weak.clone()));
         let theme_picker = self.theme_menu.open.then(|| self.render_theme(weak.clone()));
 
@@ -4061,7 +4064,7 @@ impl GraphView {
             .into_any_element()
     }
 
-    fn render_diff(&self, view: &DiffView) -> AnyElement {
+    fn render_diff(&self, view: &DiffView, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme.clone();
         let lines: Vec<AnyElement> = view
             .text
@@ -4092,10 +4095,25 @@ impl GraphView {
             .top_0()
             .left_0()
             .size_full()
-            .bg(theme.overlay)
             .flex()
             .justify_center()
             .pt(px(60.))
+            // Clicking the dimmed background closes the diff.
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size_full()
+                    .bg(theme.overlay)
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _: &MouseDownEvent, _window, cx| {
+                            this.diff = None;
+                            cx.notify();
+                        }),
+                    ),
+            )
             .child(
                 v_flex()
                     .w(px(900.))
