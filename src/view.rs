@@ -2131,6 +2131,18 @@ impl Render for GraphView {
                 .text_color(theme.text_muted)
                 .child("Loading…")
                 .into_any_element()
+        } else if !self.search_query.is_empty() && self.matches.is_empty() {
+            div()
+                .p_4()
+                .text_color(theme.text_muted)
+                .child("No matching commits")
+                .into_any_element()
+        } else if self.rows.is_empty() {
+            div()
+                .p_4()
+                .text_color(theme.text_muted)
+                .child("No commits")
+                .into_any_element()
         } else {
             let ctx = Arc::new(row_ctx);
             let weak = cx.weak_entity();
