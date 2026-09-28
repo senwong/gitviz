@@ -3696,7 +3696,7 @@ impl GraphView {
             self.branch_filter.query.clone()
         };
 
-        overlay(theme.clone(), 120., 520., vec![
+        overlay(theme.clone(), 120., 600., vec![
             h_flex()
                 .w_full()
                 .px_3()
@@ -4626,6 +4626,8 @@ impl GraphView {
             .clamp(0.0, max);
         let viewport = self.list_state.viewport_bounds().size.height.as_f32();
         let (thumb_top, thumb_height) = scrollbar_thumb(current, max, viewport);
+        let thumb_color = theme.border;
+        let thumb_hover = theme.text_muted;
         div()
             .w(px(10.))
             .h_full()
@@ -4639,7 +4641,8 @@ impl GraphView {
                     .w(px(6.))
                     .h(px(thumb_height))
                     .rounded_full()
-                    .bg(theme.border),
+                    .bg(thumb_color)
+                    .hover(move |this| this.bg(thumb_hover)),
             )
             .into_any_element()
     }
