@@ -2824,6 +2824,50 @@ impl GraphView {
                             }),
                     )
                     .child(div().flex_1())
+                    .when(self.file_tree, {
+                        let all_dirs: Vec<String> =
+                            build_tree_rows(&detail.files, self.compact_folders, &HashSet::new())
+                                .into_iter()
+                                .filter(|row| row.is_dir)
+                                .map(|row| row.path)
+                                .collect();
+                        let weak_collapse = weak.clone();
+                        let weak_expand = weak.clone();
+                        let theme_btn = theme.clone();
+                        move |this: Div| {
+                            this.child(action_button(
+                                "collapse-all",
+                                "Collapse",
+                                &theme_btn,
+                                {
+                                    let weak = weak_collapse.clone();
+                                    let dirs = all_dirs.clone();
+                                    move |cx| {
+                                        weak.update(cx, |this, cx| {
+                                            this.collapsed_dirs = dirs.iter().cloned().collect();
+                                            cx.notify();
+                                        })
+                                        .ok();
+                                    }
+                                },
+                            ))
+                            .child(action_button(
+                                "expand-all",
+                                "Expand",
+                                &theme_btn,
+                                {
+                                    let weak = weak_expand.clone();
+                                    move |cx| {
+                                        weak.update(cx, |this, cx| {
+                                            this.collapsed_dirs.clear();
+                                            cx.notify();
+                                        })
+                                        .ok();
+                                    }
+                                },
+                            ))
+                        }
+                    })
                     .child(action_button(
                         "toggle-file-tree",
                         if self.file_tree { "List" } else { "Tree" },
