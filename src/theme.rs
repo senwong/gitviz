@@ -19,6 +19,8 @@ pub struct Theme {
     pub selected: Rgba,
     pub accent: Rgba,
     pub error: Rgba,
+    /// Colour used for tag labels (a calm green).
+    pub tag: Rgba,
     pub lane_colors: [Rgba; 8],
 }
 
@@ -83,6 +85,11 @@ fn build(spec: Spec) -> Theme {
         selected: rgb(spec.selected),
         accent: rgb(spec.accent),
         error: rgb(spec.error),
+        tag: if spec.is_dark {
+            rgb(0x98c379)
+        } else {
+            rgb(0x2e7d32)
+        },
         lane_colors: if spec.is_dark {
             dark_lanes()
         } else {

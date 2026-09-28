@@ -82,6 +82,7 @@ pub struct GraphView {
     /// Incremented on every `load`, so stale background results are ignored.
     load_gen: u64,
     loading: bool,
+    caret_on: bool,
     branch: Option<String>,
     commits: Vec<Commit>,
     rows: Vec<RowKind>,
@@ -551,6 +552,7 @@ impl GraphView {
             active: 0,
             load_gen: 0,
             loading: false,
+            caret_on: true,
             branch: None,
             commits: Vec::new(),
             rows: Vec::new(),
@@ -642,7 +644,36 @@ impl GraphView {
         this.apply_repo_config();
         this.sort_repos();
         this.load(cx);
+
+        // Blink the text caret while any text input is open.
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_millis(530))
+                    .await;
+                this.update(cx, |this, cx| {
+                    if this.input_active() {
+                        this.caret_on = !this.caret_on;
+                        cx.notify();
+                    } else if !this.caret_on {
+                        this.caret_on = true;
+                    }
+                })
+                .ok();
+            }
+        })
+        .detach();
+
         this
+    }
+
+    /// Whether any text input overlay is currently open.
+    fn input_active(&self) -> bool {
+        self.commands.open
+            || self.palette.open
+            || self.prompt.is_some()
+            || self.search_active
+            || self.branch_filter.open
     }
 
     // -- data -------------------------------------------------------------
@@ -1426,20 +1457,41 @@ impl GraphView {
         }
     }
 
-    /// Loads a `.gitviz-workspace` file, appending its listed roots.
+    /// Switches the active repository to one at (or under) `path`, so opening
+    /// a repository actually shows it.
+    fn activate_path(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
+        if let Some(index) = self
+            .repos
+            .iter()
+            .position(|repo| repo.path == path || repo.path.starts_with(path))
+        {
+            self.switch_to(index, cx);
+        }
+    }
+
+    /// Loads a `.gitviz-workspace` file, appending its listed roots and
+    /// switching to the first listed repository.
     fn open_workspace(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
         let Ok(text) = std::fs::read_to_string(path) else {
             self.error = Some(format!("failed to read {}", path.display()));
             cx.notify();
             return;
         };
+        let mut first: Option<std::path::PathBuf> = None;
         for line in crate::workspace::parse(&text) {
-            self.add_root(crate::workspace::expand_tilde(&line));
+            let root = crate::workspace::expand_tilde(&line);
+            if first.is_none() {
+                first = Some(root.clone());
+            }
+            self.add_root(root);
         }
         self.workspace_path = Some(path.to_path_buf());
         crate::workspace::remember_recent(path);
         self.recent = crate::workspace::load_recent();
         self.rediscover(cx);
+        if let Some(target) = first {
+            self.activate_path(&target, cx);
+        }
     }
 
     /// Writes the current roots to a `.gitviz-workspace` file.
@@ -1461,9 +1513,11 @@ impl GraphView {
         self.recent_menu.open = false;
         if path.to_string_lossy().ends_with(crate::workspace::FILE_SUFFIX) {
             self.open_workspace(&path, cx);
-        } else if self.add_root(path) {
-            self.rediscover(cx);
+            return;
         }
+        self.add_root(path.clone());
+        self.rediscover(cx);
+        self.activate_path(&path, cx);
     }
 
     /// Switches to the named theme and remembers the choice.
@@ -1484,15 +1538,20 @@ impl GraphView {
         cx: &mut Context<Self>,
     ) {
         let mut changed = false;
+        let mut last_repo: Option<std::path::PathBuf> = None;
         for path in paths.paths() {
             if path.to_string_lossy().ends_with(crate::workspace::FILE_SUFFIX) {
                 self.open_workspace(path, cx);
             } else {
                 changed |= self.add_root(path.clone());
+                last_repo = Some(path.clone());
             }
         }
         if changed {
             self.rediscover(cx);
+        }
+        if let Some(path) = last_repo {
+            self.activate_path(&path, cx);
         }
     }
 
@@ -1649,9 +1708,9 @@ impl GraphView {
             }
             PromptAction::AddRepository => {
                 let path = crate::workspace::expand_tilde(&name);
-                if self.add_root(path) {
-                    self.rediscover(cx);
-                }
+                self.add_root(path.clone());
+                self.rediscover(cx);
+                self.activate_path(&path, cx);
             }
         }
     }
@@ -1926,6 +1985,7 @@ impl Render for GraphView {
                 .w_full()
                 .px_3()
                 .py_1()
+                .gap_0p5()
                 .bg(theme.bg)
                 .border_b_1()
                 .border_color(theme.border)
@@ -1936,6 +1996,7 @@ impl Render for GraphView {
                 } else {
                     self.search_query.clone()
                 })
+                .child(caret(&theme, self.caret_on))
         });
 
         // rows
@@ -1945,6 +2006,7 @@ impl Render for GraphView {
             stashes: Arc::new(self.stashes.clone()),
             rows: Arc::new(self.rows.clone()),
             selected: self.selected,
+            hovered: self.hovered,
             compare: self.compare,
             head_ancestors: self.head_ancestors.clone(),
             theme: theme.clone(),
@@ -2200,11 +2262,16 @@ impl GraphView {
                     if let Ok(Ok(Some(paths))) = receiver.await {
                         this.update(cx, |this, cx| {
                             let mut changed = false;
+                            let mut last: Option<std::path::PathBuf> = None;
                             for path in paths {
-                                changed |= this.add_root(path);
+                                changed |= this.add_root(path.clone());
+                                last = Some(path);
                             }
                             if changed {
                                 this.rediscover(cx);
+                            }
+                            if let Some(path) = last {
+                                this.activate_path(&path, cx);
                             }
                         })
                         .ok();
@@ -2748,14 +2815,16 @@ impl GraphView {
         };
 
         overlay(theme.clone(), 120., 520., vec![
-            div()
+            h_flex()
                 .w_full()
                 .px_3()
                 .py_2()
+                .gap_0p5()
                 .text_color(theme.text)
                 .border_b_1()
                 .border_color(theme.border)
                 .child(query_line)
+                .child(caret(&theme, self.caret_on))
                 .into_any_element(),
             v_flex()
                 .id("command-list")
@@ -2907,14 +2976,16 @@ impl GraphView {
         };
 
         overlay(theme.clone(), 120., 560., vec![
-            div()
+            h_flex()
                 .w_full()
                 .px_3()
                 .py_2()
+                .gap_0p5()
                 .text_color(theme.text)
                 .border_b_1()
                 .border_color(theme.border)
                 .child(query_line)
+                .child(caret(&theme, self.caret_on))
                 .into_any_element(),
             v_flex()
                 .id("repo-list")
@@ -3194,16 +3265,18 @@ impl GraphView {
                 .border_color(theme.border)
                 .child(title)
                 .into_any_element(),
-            div()
+            h_flex()
                 .w_full()
                 .px_3()
                 .py_2()
+                .gap_0p5()
                 .text_color(theme.text)
                 .child(if input.is_empty() {
                     "Type a name…".to_string()
                 } else {
                     input
                 })
+                .child(caret(&theme, self.caret_on))
                 .into_any_element(),
         ])
     }
@@ -3391,15 +3464,23 @@ impl GraphView {
             })
             .collect();
 
+        let query_line = if self.branch_filter.query.is_empty() {
+            "Filter branches (type to filter, click to toggle)".to_string()
+        } else {
+            self.branch_filter.query.clone()
+        };
+
         overlay(theme.clone(), 120., 520., vec![
-            div()
+            h_flex()
                 .w_full()
                 .px_3()
                 .py_2()
+                .gap_0p5()
                 .text_color(theme.text_muted)
                 .border_b_1()
                 .border_color(theme.border)
-                .child("Filter branches (click to toggle, or act on one)")
+                .child(query_line)
+                .child(caret(&theme, self.caret_on))
                 .into_any_element(),
             show_all,
             v_flex()
@@ -3925,6 +4006,17 @@ fn v_flex() -> Div {
     div().flex().flex_col()
 }
 
+/// A blinking text caret (a thin bar). It always occupies space, so toggling it
+/// does not shift the layout.
+fn caret(theme: &Theme, on: bool) -> AnyElement {
+    div()
+        .w(px(2.))
+        .h(px(15.))
+        .rounded_full()
+        .when(on, |this| this.bg(theme.text))
+        .into_any_element()
+}
+
 fn action_button(
     id: impl Into<gpui::ElementId>,
     label: &'static str,
@@ -4291,6 +4383,7 @@ struct RowRenderContext {
     stashes: Arc<Vec<StashEntry>>,
     rows: Arc<Vec<RowKind>>,
     selected: Option<RowKind>,
+    hovered: Option<RowKind>,
     compare: Option<usize>,
     head_ancestors: HashSet<String>,
     theme: Theme,
@@ -4440,14 +4533,13 @@ impl RowRenderContext {
         let dot_left = px(commit.lane as f32 * LANE_WIDTH + (LANE_WIDTH - DOT_SIZE) / 2.0);
         let dot_top = px((ROW_HEIGHT - DOT_SIZE) / 2.0);
 
-        let ref_names = format_refs(&commit.refs, self.combine_refs, self.ref_align);
         let is_current_match = self.matches.get(self.match_cursor) == Some(&index);
         let is_match = self.matches.contains(&index);
-        let refs = if ref_names.is_empty() {
-            String::new()
-        } else {
-            format!("[{}] ", ref_names.join(", "))
-        };
+        let ref_pills: Vec<AnyElement> = format_refs(&commit.refs, self.combine_refs, self.ref_align)
+            .iter()
+            .flat_map(|entry| split_ref_entry(entry))
+            .map(|label| ref_pill(&label, theme))
+            .collect();
         let subject = if self.emoji_enabled {
             emoji::replace_with(&commit.subject, &self.custom_emoji)
         } else {
@@ -4472,6 +4564,10 @@ impl RowRenderContext {
             .h(px(ROW_HEIGHT))
             .w_full()
             .items_center()
+            .when(
+                !is_selected && self.hovered == Some(RowKind::Commit(index)),
+                |this| this.bg(theme.hover),
+            )
             .when(is_selected, |this| this.bg(theme.selected))
             .when(is_compare, |this| this.bg(theme.hover))
             .when(is_current_match, |this| this.bg(theme.selected))
@@ -4527,13 +4623,19 @@ impl RowRenderContext {
                     ),
             )
             .child(
-                div()
+                h_flex()
                     .flex_1()
                     .min_w_0()
-                    .truncate()
-                    .text_sm()
-                    .text_color(if is_ancestor { theme.text } else { theme.text_muted })
-                    .child(format!("{}{}  {}", refs, commit.short_sha(), subject)),
+                    .gap_1()
+                    .children(ref_pills)
+                    .child(
+                        div()
+                            .min_w_0()
+                            .truncate()
+                            .text_sm()
+                            .text_color(if is_ancestor { theme.text } else { theme.text_muted })
+                            .child(format!("{}  {}", commit.short_sha(), subject)),
+                    ),
             )
             .when(self.columns.date, |this| {
                 this.child(column_cell(&date, theme, self.date_width))
@@ -4661,6 +4763,53 @@ fn combine_refs(refs: &[String]) -> Vec<String> {
         })
         .cloned()
         .collect()
+}
+
+/// How a git ref label should be styled.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RefKind {
+    Head,
+    Local,
+    Remote,
+    Tag,
+}
+
+fn ref_kind(label: &str) -> RefKind {
+    if label == "HEAD" || label.starts_with("HEAD -> ") {
+        RefKind::Head
+    } else if label.starts_with("tag:") {
+        RefKind::Tag
+    } else if label.contains('/') {
+        RefKind::Remote
+    } else {
+        RefKind::Local
+    }
+}
+
+/// Expands a `%D` ref entry into display labels: `HEAD -> main` becomes
+/// `["HEAD", "main"]`.
+fn split_ref_entry(entry: &str) -> Vec<String> {
+    match entry.strip_prefix("HEAD -> ") {
+        Some(branch) => vec!["HEAD".to_string(), branch.trim().to_string()],
+        None => vec![entry.to_string()],
+    }
+}
+
+fn ref_pill(label: &str, theme: &Theme) -> AnyElement {
+    let display = label.strip_prefix("tag:").map(str::trim).unwrap_or(label);
+    let (fg, bg) = match ref_kind(label) {
+        RefKind::Head => (theme.bg, theme.accent),
+        RefKind::Local => (theme.accent, theme.hover),
+        RefKind::Remote => (theme.text_muted, theme.hover),
+        RefKind::Tag => (theme.tag, theme.hover),
+    };
+    h_flex()
+        .px_1()
+        .py_0p5()
+        .rounded_md()
+        .bg(bg)
+        .child(div().text_sm().text_color(fg).child(display.to_string()))
+        .into_any_element()
 }
 
 struct TreeNode {
@@ -5237,6 +5386,21 @@ mod tests {
                 (0, false, "e.txt"),
             ]
         );
+    }
+
+    #[test]
+    fn classifies_and_splits_ref_entries() {
+        assert_eq!(ref_kind("HEAD -> main"), RefKind::Head);
+        assert_eq!(ref_kind("HEAD"), RefKind::Head);
+        assert_eq!(ref_kind("main"), RefKind::Local);
+        assert_eq!(ref_kind("origin/main"), RefKind::Remote);
+        assert_eq!(ref_kind("tag: v1.0"), RefKind::Tag);
+
+        assert_eq!(
+            split_ref_entry("HEAD -> main"),
+            vec!["HEAD".to_string(), "main".to_string()]
+        );
+        assert_eq!(split_ref_entry("origin/main"), vec!["origin/main".to_string()]);
     }
 
     fn changed(path: &str) -> ChangedFile {
