@@ -126,6 +126,7 @@ pub struct GraphView {
     show_detail: bool,
     remembered_selection: std::collections::HashMap<std::path::PathBuf, String>,
     pending_select_sha: Option<String>,
+    tree_cache: std::cell::RefCell<TreeCache>,
     color_preset: usize,
     branch_globs: Vec<String>,
     custom_lane_colors: Vec<String>,
@@ -654,6 +655,7 @@ impl GraphView {
             show_detail: true,
             remembered_selection: std::collections::HashMap::new(),
             pending_select_sha: None,
+            tree_cache: std::cell::RefCell::default(),
             color_preset: 0,
             branch_globs: Vec::new(),
             custom_lane_colors: Vec::new(),
@@ -2783,6 +2785,48 @@ impl GraphView {
         }
     }
 
+    /// Flattened tree rows for the current detail (memoised).
+    fn tree_rows(
+        &self,
+        files: &[ChangedFile],
+    ) -> (std::rc::Rc<Vec<TreeRow>>, std::rc::Rc<Vec<String>>) {
+        let mut collapsed: Vec<String> = self.collapsed_dirs.iter().cloned().collect();
+        collapsed.sort();
+        let detail_key = self.detail_sha.clone().unwrap_or_else(|| {
+            self.detail_stash
+                .map(|stash| format!("stash@{stash}"))
+                .unwrap_or_default()
+        });
+        let key = (
+            self.active_repo()
+                .map(|repo| repo.path.display().to_string())
+                .unwrap_or_default(),
+            detail_key,
+            self.compact_folders,
+            collapsed,
+        );
+        let mut cache = self.tree_cache.borrow_mut();
+        if cache.key.as_ref() != Some(&key) {
+            let rows = build_tree_rows(files, self.compact_folders, &self.collapsed_dirs);
+            let dirs: Vec<String> = if self.collapsed_dirs.is_empty() {
+                rows.iter()
+                    .filter(|row| row.is_dir)
+                    .map(|row| row.path.clone())
+                    .collect()
+            } else {
+                build_tree_rows(files, self.compact_folders, &HashSet::new())
+                    .into_iter()
+                    .filter(|row| row.is_dir)
+                    .map(|row| row.path)
+                    .collect()
+            };
+            cache.key = Some(key);
+            cache.rows = std::rc::Rc::new(rows);
+            cache.dirs = std::rc::Rc::new(dirs);
+        }
+        (cache.rows.clone(), cache.dirs.clone())
+    }
+
     fn render_detail(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
         let theme = self.theme.clone();
         let Some(detail) = &self.detail else {
@@ -2796,14 +2840,18 @@ impl GraphView {
         let (subject, body) = split_subject_body(&detail.message);
         let short_sha: String = sha.chars().take(8).collect();
 
+        let tree = (self.file_tree && !comparing).then(|| self.tree_rows(&detail.files));
         let files: Vec<AnyElement> = if comparing {
             self.compare_files
                 .iter()
                 .map(|file| render_file_row(file, &file.path, &weak, &theme, None, false))
                 .collect()
         } else if self.file_tree {
-            build_tree_rows(&detail.files, self.compact_folders, &self.collapsed_dirs)
-                .into_iter()
+            let rows = tree
+                .as_ref()
+                .map(|(rows, _)| rows.clone())
+                .unwrap_or_default();
+            rows.iter()
                 .map(|row| {
                     if row.is_dir {
                         let collapsed = self.collapsed_dirs.contains(&row.path);
@@ -2845,7 +2893,7 @@ impl GraphView {
                                 .into_any_element(),
                         )
                     } else {
-                        let file = row.file.unwrap_or_default();
+                        let file = row.file.clone().unwrap_or_default();
                         let reviewed = self.review.is_reviewed(&format!("{sha}\t{}", file.path));
                         indent_wrap(
                             row.depth,
@@ -2990,15 +3038,10 @@ impl GraphView {
                     )
                     .child(div().flex_1())
                     .when(self.file_tree, {
-                        let all_dirs: Vec<String> = if self.file_tree {
-                            build_tree_rows(&detail.files, self.compact_folders, &HashSet::new())
-                                .into_iter()
-                                .filter(|row| row.is_dir)
-                                .map(|row| row.path)
-                                .collect()
-                        } else {
-                            Vec::new()
-                        };
+                        let all_dirs: Vec<String> = tree
+                            .as_ref()
+                            .map(|(_, dirs)| dirs.as_ref().clone())
+                            .unwrap_or_default();
                         let weak_collapse = weak.clone();
                         let weak_expand = weak.clone();
                         let theme_btn = theme.clone();
@@ -5926,6 +5969,7 @@ impl TreeNode {
     }
 }
 
+#[derive(Clone)]
 struct TreeRow {
     depth: usize,
     is_dir: bool,
@@ -5933,6 +5977,16 @@ struct TreeRow {
     /// Full path (directory path for folders, file path for files).
     path: String,
     file: Option<ChangedFile>,
+}
+
+/// Memoised file-tree rows for the detail panel. Keyed by the shown commit
+/// (or stash) plus the current tree/compact/collapsed settings, so repeated
+/// frames reuse the flattened tree instead of rebuilding it every render.
+#[derive(Default)]
+struct TreeCache {
+    key: Option<(String, String, bool, Vec<String>)>,
+    rows: std::rc::Rc<Vec<TreeRow>>,
+    dirs: std::rc::Rc<Vec<String>>,
 }
 
 fn build_tree_rows(
