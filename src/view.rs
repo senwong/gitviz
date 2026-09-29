@@ -420,6 +420,8 @@ enum PromptAction {
     FetchInto,
     CreateAnnotatedTag,
     AddRepository,
+    EditPrProvider,
+    EditIssueProvider,
 }
 
 struct DiffView {
@@ -1952,6 +1954,21 @@ impl GraphView {
         let Some(prompt) = self.prompt.take() else {
             return;
         };
+        // Provider templates may be cleared (empty input restores the built-in
+        // provider), so they bypass the "must be non-empty" rule below.
+        if matches!(
+            prompt.action,
+            PromptAction::EditPrProvider | PromptAction::EditIssueProvider
+        ) {
+            let value = prompt.input.trim().to_string();
+            match prompt.action {
+                PromptAction::EditPrProvider => self.custom_pr_provider = value,
+                PromptAction::EditIssueProvider => self.custom_issue_provider = value,
+                _ => {}
+            }
+            self.export_repo_config(cx);
+            return;
+        }
         let name = prompt.input.trim().to_string();
         if name.is_empty() {
             return;
@@ -1988,6 +2005,7 @@ impl GraphView {
                 self.export_repo_config(cx);
                 self.load(cx);
             }
+            PromptAction::EditPrProvider | PromptAction::EditIssueProvider => {}
             PromptAction::EditRemote => {
                 let remote = sha.clone();
                 self.run_op(move |repo| git::set_remote_url(&repo.path, &remote, &name), cx);
@@ -2669,6 +2687,25 @@ impl GraphView {
                     title: "Fetch into local branch (remote remote-branch local-branch)".to_string(),
                     input: String::new(),
                     action: PromptAction::FetchInto,
+                    sha: String::new(),
+                });
+                cx.notify();
+            }
+            "edit-pr-provider" => {
+                self.prompt = Some(Prompt {
+                    title: "Pull request URL template ({base_url} {base} {branch} {title} {host})"
+                        .to_string(),
+                    input: self.custom_pr_provider.clone(),
+                    action: PromptAction::EditPrProvider,
+                    sha: String::new(),
+                });
+                cx.notify();
+            }
+            "edit-issue-provider" => {
+                self.prompt = Some(Prompt {
+                    title: "Issue URL template ({base_url} {issue} {host})".to_string(),
+                    input: self.custom_issue_provider.clone(),
+                    action: PromptAction::EditIssueProvider,
                     sha: String::new(),
                 });
                 cx.notify();
@@ -4482,7 +4519,11 @@ impl GraphView {
             ("Discovery depth +", "depth-plus"),
             ("Export configuration to .gitviz.conf", "export-config"),
             ("Add branch glob…", "add-glob"),
-            ("Fetch into local branch…", "fetch-into"),
+    ("Fetch into local branch…", "fetch-into"),
+    ("Edit PR provider template…", "edit-pr-provider"),
+    ("Edit Issue provider template…", "edit-issue-provider"),
+            ("Edit PR provider template…", "edit-pr-provider"),
+            ("Edit Issue provider template…", "edit-issue-provider"),
             ("Add repository…", "add-repo"),
             ("Remove current repository", "remove-repo"),
             ("Open repository…", "open-repo"),
@@ -4851,6 +4892,8 @@ impl GraphView {
                         v_flex()
                             .id("diff-lines")
                             .w_full()
+                            .flex_1()
+                            .min_h_0()
                             .overflow_y_scroll()
                             .overflow_x_scroll()
                             .children(lines),
@@ -4958,6 +5001,23 @@ impl GraphView {
                     title: "Fetch into local branch (remote remote-branch local-branch)".to_string(),
                     input: String::new(),
                     action: PromptAction::FetchInto,
+                    sha: String::new(),
+                });
+            }
+            "edit-pr-provider" => {
+                self.prompt = Some(Prompt {
+                    title: "Pull request URL template ({base_url} {base} {branch} {title} {host})"
+                        .to_string(),
+                    input: self.custom_pr_provider.clone(),
+                    action: PromptAction::EditPrProvider,
+                    sha: String::new(),
+                });
+            }
+            "edit-issue-provider" => {
+                self.prompt = Some(Prompt {
+                    title: "Issue URL template ({base_url} {issue} {host})".to_string(),
+                    input: self.custom_issue_provider.clone(),
+                    action: PromptAction::EditIssueProvider,
                     sha: String::new(),
                 });
             }

@@ -146,7 +146,7 @@ PROGRESS.md         本文件
 功能已基本对齐 vscode-git-graph（见 README 清单）。剩余可选：
 
 - [ ] 网络头像（需要给 `Application` 配置 `AssetSource` + http client，工作量较大）
-- [ ] 自定义 Pull Request provider 的图形化配置（当前走 `.gitviz.conf`）
+- [x] 自定义 Pull Request / Issue provider 的图形化配置（设置面板 “Edit PR/Issue provider template…”，写入 `.gitviz.conf`；留空恢复内置 provider）
 - [ ] 更多键盘快捷键可配置化
 
 ## 测试
