@@ -2522,6 +2522,25 @@ impl Render for GraphView {
     }
 }
 
+/// Key identifying a memoised file-tree layout: the repository, the shown
+/// commit (or stash), the compact setting, and the collapsed directories
+/// (order-independent).
+fn tree_cache_key(
+    repo: &str,
+    sha: Option<&str>,
+    stash: Option<usize>,
+    compact: bool,
+    collapsed: &HashSet<String>,
+) -> (String, String, bool, Vec<String>) {
+    let detail = sha
+        .map(str::to_string)
+        .or_else(|| stash.map(|stash| format!("stash@{stash}")))
+        .unwrap_or_default();
+    let mut collapsed: Vec<String> = collapsed.iter().cloned().collect();
+    collapsed.sort();
+    (repo.to_string(), detail, compact, collapsed)
+}
+
 /// The window title for the given repositories: `gitviz — <label> (<branch>)`.
 /// When several repositories share a name, the full path is used instead so the
 /// title stays unambiguous.
@@ -2790,20 +2809,15 @@ impl GraphView {
         &self,
         files: &[ChangedFile],
     ) -> (std::rc::Rc<Vec<TreeRow>>, std::rc::Rc<Vec<String>>) {
-        let mut collapsed: Vec<String> = self.collapsed_dirs.iter().cloned().collect();
-        collapsed.sort();
-        let detail_key = self.detail_sha.clone().unwrap_or_else(|| {
-            self.detail_stash
-                .map(|stash| format!("stash@{stash}"))
-                .unwrap_or_default()
-        });
-        let key = (
-            self.active_repo()
+        let key = tree_cache_key(
+            &self
+                .active_repo()
                 .map(|repo| repo.path.display().to_string())
                 .unwrap_or_default(),
-            detail_key,
+            self.detail_sha.as_deref(),
+            self.detail_stash,
             self.compact_folders,
-            collapsed,
+            &self.collapsed_dirs,
         );
         let mut cache = self.tree_cache.borrow_mut();
         if cache.key.as_ref() != Some(&key) {
@@ -6266,6 +6280,33 @@ mod tests {
     #[test]
     fn window_title_without_repos() {
         assert_eq!(window_title(&[], 0, Some("main")), "gitviz");
+    }
+
+    #[test]
+    fn tree_cache_key_is_order_independent_and_discriminating() {
+        let a: HashSet<String> = ["a", "b"].iter().map(|s| s.to_string()).collect();
+        let b: HashSet<String> = ["b", "a"].iter().map(|s| s.to_string()).collect();
+        assert_eq!(
+            tree_cache_key("/r", Some("deadbeef"), None, false, &a),
+            tree_cache_key("/r", Some("deadbeef"), None, false, &b)
+        );
+        // Different repo / commit / stash / compact all produce distinct keys.
+        assert_ne!(
+            tree_cache_key("/r", Some("deadbeef"), None, false, &a),
+            tree_cache_key("/other", Some("deadbeef"), None, false, &a)
+        );
+        assert_ne!(
+            tree_cache_key("/r", Some("deadbeef"), None, false, &a),
+            tree_cache_key("/r", Some("cafebabe"), None, false, &a)
+        );
+        assert_eq!(
+            tree_cache_key("/r", None, Some(2), false, &a).1,
+            "stash@2".to_string()
+        );
+        assert_ne!(
+            tree_cache_key("/r", None, Some(1), false, &a),
+            tree_cache_key("/r", None, Some(2), false, &a)
+        );
     }
 
     fn commit(sha: &str, subject: &str, author: &str) -> Commit {
