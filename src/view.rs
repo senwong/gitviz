@@ -1410,17 +1410,28 @@ impl GraphView {
         }
 
         if keystroke.key == "escape" {
-            self.menu = None;
-            self.settings_open = false;
-            self.diff = None;
-            // Close the commit details / comparison view.
-            self.selected = None;
-            self.detail = None;
-            self.detail_sha = None;
-            self.detail_stash = None;
-            self.compare = None;
-            self.compare_worktree = false;
-            self.compare_files.clear();
+            // Dismiss the topmost layer only, so Esc never throws away more
+            // state than the user expects.
+            if self.menu.is_some() {
+                self.menu = None;
+            } else if self.stash_panel_open {
+                self.stash_panel_open = false;
+            } else if self.branch_filter.open {
+                self.branch_filter.open = false;
+            } else if self.settings_open {
+                self.settings_open = false;
+            } else if self.diff.is_some() {
+                self.diff = None;
+            } else {
+                // Close the commit details / comparison view.
+                self.selected = None;
+                self.detail = None;
+                self.detail_sha = None;
+                self.detail_stash = None;
+                self.compare = None;
+                self.compare_worktree = false;
+                self.compare_files.clear();
+            }
             cx.notify();
             return;
         }
