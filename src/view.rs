@@ -2990,12 +2990,15 @@ impl GraphView {
                     )
                     .child(div().flex_1())
                     .when(self.file_tree, {
-                        let all_dirs: Vec<String> =
+                        let all_dirs: Vec<String> = if self.file_tree {
                             build_tree_rows(&detail.files, self.compact_folders, &HashSet::new())
                                 .into_iter()
                                 .filter(|row| row.is_dir)
                                 .map(|row| row.path)
-                                .collect();
+                                .collect()
+                        } else {
+                            Vec::new()
+                        };
                         let weak_collapse = weak.clone();
                         let weak_expand = weak.clone();
                         let theme_btn = theme.clone();
