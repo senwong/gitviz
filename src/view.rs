@@ -4311,6 +4311,7 @@ impl GraphView {
             );
         }
 
+        let mut rows: Vec<AnyElement> = Vec::new();
         for stash in self.stashes.iter() {
             let index = stash.index;
             let theme_row = theme.clone();
@@ -4369,8 +4370,23 @@ impl GraphView {
                     },
                 ));
             }
-            children.push(row.into_any_element());
+            rows.push(row.into_any_element());
         }
+
+        if !self.stashes.is_empty() {
+            children.push(
+                v_flex()
+                    .id("stash-list-rows")
+                    .w_full()
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .children(rows)
+                    .into_any_element(),
+            );
+        }
+
+        children.push(overlay_hint(&theme, "Esc to close"));
 
         overlay(theme, 120., 620., overlay_close(weak), children)
     }
@@ -4663,6 +4679,8 @@ impl GraphView {
             v_flex()
                 .id("settings-list")
                 .w_full()
+                .flex_1()
+                .min_h_0()
                 .overflow_y_scroll()
                 .children(items)
                 .into_any_element(),
