@@ -4302,6 +4302,7 @@ impl GraphView {
         for stash in self.stashes.iter() {
             let index = stash.index;
             let theme_row = theme.clone();
+            let weak_select = weak.clone();
             let mut row = h_flex()
                 .id(format!("stash-row-{index}"))
                 .w_full()
@@ -4309,6 +4310,7 @@ impl GraphView {
                 .py_1()
                 .gap_2()
                 .items_center()
+                .hover(|this| this.bg(theme_row.hover))
                 .child(
                     div()
                         .text_color(theme_row.accent)
@@ -4316,10 +4318,23 @@ impl GraphView {
                 )
                 .child(
                     div()
+                        .id(format!("stash-open-{index}"))
                         .flex_1()
                         .min_w_0()
                         .truncate()
                         .text_color(theme_row.text)
+                        .cursor_pointer()
+                        .on_click(move |_: &ClickEvent, window, cx| {
+                            let _ = window;
+                            weak_select
+                                .update(cx, |this, cx| {
+                                    this.show_stashes = true;
+                                    this.rows_dirty = true;
+                                    this.stash_panel_open = false;
+                                    this.select_row(RowKind::Stash(index), cx);
+                                })
+                                .ok();
+                        })
                         .child(stash.message.clone()),
                 );
             for (label, action) in [
