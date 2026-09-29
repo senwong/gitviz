@@ -3469,6 +3469,8 @@ impl GraphView {
             v_flex()
                 .id("command-list")
                 .w_full()
+                .flex_1()
+                .min_h_0()
                 .overflow_y_scroll()
                 .children(items)
                 .into_any_element(),
@@ -3634,6 +3636,8 @@ impl GraphView {
             v_flex()
                 .id("repo-list")
                 .w_full()
+                .flex_1()
+                .min_h_0()
                 .overflow_y_scroll()
                 .children(items)
                 .into_any_element(),
@@ -3858,6 +3862,8 @@ impl GraphView {
                 v_flex()
                     .id("recent-list")
                     .w_full()
+                    .flex_1()
+                    .min_h_0()
                     .overflow_y_scroll()
                     .children(items)
                     .into_any_element()
@@ -3925,6 +3931,8 @@ impl GraphView {
             v_flex()
                 .id("theme-list")
                 .w_full()
+                .flex_1()
+                .min_h_0()
                 .overflow_y_scroll()
                 .children(items)
                 .into_any_element(),
@@ -4239,6 +4247,26 @@ impl GraphView {
             })
             .collect();
 
+        let mut body: Vec<AnyElement> = vec![
+            section_label(&theme, "Local branches"),
+            show_all,
+            v_flex()
+                .id("branch-filter-list")
+                .w_full()
+                .children(items)
+                .into_any_element(),
+        ];
+        if !remote_items.is_empty() {
+            body.push(section_label(&theme, "Remote branches"));
+            body.push(
+                v_flex()
+                    .id("remote-branch-list")
+                    .w_full()
+                    .children(remote_items)
+                    .into_any_element(),
+            );
+        }
+
         let mut children: Vec<AnyElement> = vec![
             h_flex()
                 .w_full()
@@ -4251,26 +4279,15 @@ impl GraphView {
                 .child(query_line)
                 .child(caret(&theme, self.caret_on))
                 .into_any_element(),
-            section_label(&theme, "Local branches"),
-            show_all,
             v_flex()
-                .id("branch-filter-list")
+                .id("branch-filter-body")
                 .w_full()
+                .flex_1()
+                .min_h_0()
                 .overflow_y_scroll()
-                .children(items)
+                .children(body)
                 .into_any_element(),
         ];
-        if !remote_items.is_empty() {
-            children.push(section_label(&theme, "Remote branches"));
-            children.push(
-                v_flex()
-                    .id("remote-branch-list")
-                    .w_full()
-                    .overflow_y_scroll()
-                    .children(remote_items)
-                    .into_any_element(),
-            );
-        }
         children.push(overlay_hint(&theme, "Enter/Esc to close"));
 
         overlay(
