@@ -1464,6 +1464,12 @@ impl GraphView {
             return;
         }
 
+        // While a dismissable overlay is open, arrow keys belong to the overlay
+        // (or to nothing) rather than moving the commit selection underneath.
+        if self.diff.is_some() || self.settings_open || self.stash_panel_open {
+            return;
+        }
+
         match keystroke.key.as_str() {
             "up" => self.move_selection(-1, cx),
             "down" => self.move_selection(1, cx),
