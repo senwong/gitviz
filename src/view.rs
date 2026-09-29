@@ -132,6 +132,7 @@ pub struct GraphView {
     tree_cache: std::cell::RefCell<TreeCache>,
     stash_panel_open: bool,
     settings_filter: String,
+    diff_scroll: gpui::ScrollHandle,
     color_preset: usize,
     branch_globs: Vec<String>,
     custom_lane_colors: Vec<String>,
@@ -671,6 +672,7 @@ impl GraphView {
             tree_cache: std::cell::RefCell::default(),
             stash_panel_open: false,
             settings_filter: String::new(),
+            diff_scroll: gpui::ScrollHandle::new(),
             color_preset: 0,
             branch_globs: Vec::new(),
             custom_lane_colors: Vec::new(),
@@ -1462,6 +1464,34 @@ impl GraphView {
                         return;
                     }
                 }
+            }
+        }
+
+        // Arrow / page keys scroll the diff overlay while it is open.
+        if self.diff.is_some() {
+            let step = match keystroke.key.as_str() {
+                "down" => Some(-40.0),
+                "up" => Some(40.0),
+                "pagedown" => Some(-300.0),
+                "pageup" => Some(300.0),
+                "home" => Some(f32::NEG_INFINITY),
+                "end" => Some(f32::INFINITY),
+                _ => None,
+            };
+            if let Some(step) = step {
+                let max = self.diff_scroll.max_offset().y.as_f32();
+                let current = self.diff_scroll.offset().y.as_f32();
+                let next = if step == f32::NEG_INFINITY {
+                    0.0
+                } else if step == f32::INFINITY {
+                    -max
+                } else {
+                    (current + step).clamp(-max, 0.0)
+                };
+                let x = self.diff_scroll.offset().x;
+                self.diff_scroll.set_offset(point(x, px(next)));
+                cx.notify();
+                return;
             }
         }
 
@@ -5024,6 +5054,7 @@ impl GraphView {
                             .w_full()
                             .flex_1()
                             .min_h_0()
+                            .track_scroll(&self.diff_scroll)
                             .overflow_y_scroll()
                             .overflow_x_scroll()
                             .children(lines),
@@ -5500,6 +5531,8 @@ fn render_file_row(
 
 impl GraphView {
     fn open_diff(&mut self, path: &str, cx: &mut Context<Self>) {
+        // A freshly opened diff always starts at the top.
+        self.diff_scroll.set_offset(point(px(0.), px(0.)));
         if let Some(index) = self.detail_stash {
             if let Some(repo) = self.active_repo() {
                 let text = git::stash_file_diff(&repo.path, index, path);
