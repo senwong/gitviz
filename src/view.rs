@@ -2444,26 +2444,7 @@ impl Render for GraphView {
                 .into_any_element()
         };
 
-        let title = match self.active_repo() {
-            Some(repo) => {
-                let ambiguous = self
-                    .repos
-                    .iter()
-                    .filter(|other| other.name == repo.name)
-                    .count()
-                    > 1;
-                let label = if ambiguous {
-                    repo.path.display().to_string()
-                } else {
-                    repo.name.clone()
-                };
-                match &self.branch {
-                    Some(branch) => format!("gitviz — {label} ({branch})"),
-                    None => format!("gitviz — {label}"),
-                }
-            }
-            None => "gitviz".to_string(),
-        };
+        let title = window_title(&self.repos, self.active, self.branch.as_deref());
         if title != self.window_title {
             window.set_window_title(&title);
             self.window_title = title;
@@ -2536,6 +2517,25 @@ impl Render for GraphView {
             .when_some(prompt, |this, prompt| this.child(prompt))
             .when_some(menu_backdrop, |this, backdrop| this.child(backdrop))
             .when_some(menu, |this, menu| this.child(menu))
+    }
+}
+
+/// The window title for the given repositories: `gitviz — <label> (<branch>)`.
+/// When several repositories share a name, the full path is used instead so the
+/// title stays unambiguous.
+fn window_title(repos: &[Repo], active: usize, branch: Option<&str>) -> String {
+    let Some(repo) = repos.get(active) else {
+        return String::from("gitviz");
+    };
+    let ambiguous = repos.iter().filter(|other| other.name == repo.name).count() > 1;
+    let label = if ambiguous {
+        repo.path.display().to_string()
+    } else {
+        repo.name.clone()
+    };
+    match branch {
+        Some(branch) => format!("gitviz — {label} ({branch})"),
+        None => format!("gitviz — {label}"),
     }
 }
 
@@ -6182,6 +6182,34 @@ fn paint_lanes(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn repo(name: &str, path: &str) -> Repo {
+        Repo {
+            name: name.to_string(),
+            path: std::path::PathBuf::from(path),
+        }
+    }
+
+    #[test]
+    fn window_title_uses_name_when_unique() {
+        let repos = vec![repo("alpha", "/a/alpha"), repo("beta", "/a/beta")];
+        assert_eq!(window_title(&repos, 0, Some("main")), "gitviz — alpha (main)");
+        assert_eq!(window_title(&repos, 1, None), "gitviz — beta");
+    }
+
+    #[test]
+    fn window_title_uses_path_when_name_ambiguous() {
+        let repos = vec![repo("app", "/x/app"), repo("app", "/y/app")];
+        assert_eq!(
+            window_title(&repos, 1, Some("dev")),
+            "gitviz — /y/app (dev)"
+        );
+    }
+
+    #[test]
+    fn window_title_without_repos() {
+        assert_eq!(window_title(&[], 0, Some("main")), "gitviz");
+    }
 
     fn commit(sha: &str, subject: &str, author: &str) -> Commit {
         Commit {
