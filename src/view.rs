@@ -127,6 +127,7 @@ pub struct GraphView {
     remembered_selection: std::collections::HashMap<std::path::PathBuf, String>,
     pending_select_sha: Option<String>,
     tree_cache: std::cell::RefCell<TreeCache>,
+    stash_panel_open: bool,
     color_preset: usize,
     branch_globs: Vec<String>,
     custom_lane_colors: Vec<String>,
@@ -233,6 +234,7 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Toggle stashes", "toggle-stashes"),
     ("Toggle uncommitted changes", "toggle-uncommitted"),
     ("Toggle detail panel", "toggle-detail"),
+    ("Manage stashes…", "stash-list"),
     ("Branch filter", "branch-filter"),
     ("Settings", "settings"),
     ("Find", "find"),
@@ -656,6 +658,7 @@ impl GraphView {
             remembered_selection: std::collections::HashMap::new(),
             pending_select_sha: None,
             tree_cache: std::cell::RefCell::default(),
+            stash_panel_open: false,
             color_preset: 0,
             branch_globs: Vec::new(),
             custom_lane_colors: Vec::new(),
@@ -2148,32 +2151,7 @@ impl GraphView {
                 }
                 _ => {}
             },
-            MenuContext::Stash(index) => match action {
-                MenuAction::StashApply => {
-                    self.run_op(move |repo| git::stash_apply(&repo.path, index), cx)
-                }
-                MenuAction::StashPop => {
-                    self.run_op(move |repo| git::stash_pop(&repo.path, index), cx)
-                }
-                MenuAction::StashDrop => {
-                    self.run_op(move |repo| git::stash_drop(&repo.path, index), cx)
-                }
-                MenuAction::StashBranch => {
-                    self.prompt = Some(Prompt {
-                        title: "Create branch from stash".to_string(),
-                        input: String::new(),
-                        action: PromptAction::StashBranch,
-                        sha: index.to_string(),
-                    });
-                    cx.notify();
-                }
-                MenuAction::CopyRef => {
-                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(format!(
-                        "stash@{{{index}}}"
-                    )));
-                }
-                _ => {}
-            },
+            MenuContext::Stash(index) => self.run_stash_action(index, action, cx),
             MenuContext::Uncommitted => {
                 let include_untracked = self.include_untracked;
                 match action {
@@ -2186,6 +2164,34 @@ impl GraphView {
                     _ => {}
                 }
             }
+        }
+    }
+
+    /// Runs one of the stash actions against `stash@<index>`.
+    fn run_stash_action(&mut self, index: usize, action: MenuAction, cx: &mut Context<Self>) {
+        match action {
+            MenuAction::StashApply => {
+                self.run_op(move |repo| git::stash_apply(&repo.path, index), cx)
+            }
+            MenuAction::StashPop => {
+                self.run_op(move |repo| git::stash_pop(&repo.path, index), cx)
+            }
+            MenuAction::StashDrop => {
+                self.run_op(move |repo| git::stash_drop(&repo.path, index), cx)
+            }
+            MenuAction::StashBranch => {
+                self.prompt = Some(Prompt {
+                    title: "Create branch from stash".to_string(),
+                    input: String::new(),
+                    action: PromptAction::StashBranch,
+                    sha: index.to_string(),
+                });
+                cx.notify();
+            }
+            MenuAction::CopyRef => {
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(format!("stash@{{{index}}}")));
+            }
+            _ => {}
         }
     }
 
@@ -2296,6 +2302,7 @@ impl Render for GraphView {
             .child(chip("Detail", self.show_detail, "toggle-detail", weak.clone(), theme.clone()))
             .child(div().w(px(1.)).h(px(16.)).bg(theme.border))
             .child(chip("Branches", self.branch_filter.open, "branch-filter", weak.clone(), theme.clone()))
+            .child(chip("Stash list", self.stash_panel_open, "stash-list", weak.clone(), theme.clone()))
             .child(chip("Settings", self.settings_open, "settings", weak.clone(), theme.clone()))
             .child(chip("Find", self.search_active, "find", weak.clone(), theme.clone()))
             .child(chip("Open", false, "open-repo", weak.clone(), theme.clone()))
@@ -2415,6 +2422,7 @@ impl Render for GraphView {
                 .into_any_element()
         });
         let branch_filter = self.branch_filter.open.then(|| self.render_branch_filter(weak.clone()));
+        let stash_panel = self.stash_panel_open.then(|| self.render_stashes_panel(weak.clone()));
         let settings = self.settings_open.then(|| self.render_settings(weak.clone()));
         let diff = self
             .diff
@@ -2515,6 +2523,7 @@ impl Render for GraphView {
             .when_some(palette, |this, palette| this.child(palette))
             .when_some(commands, |this, commands| this.child(commands))
             .when_some(branch_filter, |this, filter| this.child(filter))
+            .when_some(stash_panel, |this, panel| this.child(panel))
             .when_some(settings, |this, settings| this.child(settings))
             .when_some(prompt, |this, prompt| this.child(prompt))
             .when_some(menu_backdrop, |this, backdrop| this.child(backdrop))
@@ -2598,6 +2607,10 @@ impl GraphView {
                 if self.branch_filter.open {
                     self.ensure_branch_tracking();
                 }
+                cx.notify();
+            }
+            "stash-list" => {
+                self.stash_panel_open = !self.stash_panel_open;
                 cx.notify();
             }
             "settings" => {
@@ -4255,6 +4268,84 @@ impl GraphView {
             overlay_close(weak.clone()),
             children,
         )
+    }
+
+    fn render_stashes_panel(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
+        let theme = self.theme.clone();
+        let mut children: Vec<AnyElement> = Vec::new();
+        children.push(
+            h_flex()
+                .w_full()
+                .px_3()
+                .py_2()
+                .justify_between()
+                .child(div().text_color(theme.text).child("Stashes"))
+                .child(
+                    div()
+                        .text_color(theme.text_muted)
+                        .child(format!("{}", self.stashes.len())),
+                )
+                .into_any_element(),
+        );
+
+        if self.stashes.is_empty() {
+            children.push(
+                div()
+                    .px_3()
+                    .py_4()
+                    .text_color(theme.text_muted)
+                    .child("No stashes in this repository")
+                    .into_any_element(),
+            );
+        }
+
+        for stash in self.stashes.iter() {
+            let index = stash.index;
+            let theme_row = theme.clone();
+            let mut row = h_flex()
+                .id(format!("stash-row-{index}"))
+                .w_full()
+                .px_3()
+                .py_1()
+                .gap_2()
+                .items_center()
+                .child(
+                    div()
+                        .text_color(theme_row.accent)
+                        .child(format!("stash@{{{index}}}")),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .text_color(theme_row.text)
+                        .child(stash.message.clone()),
+                );
+            for (label, action) in [
+                ("Apply", MenuAction::StashApply),
+                ("Pop", MenuAction::StashPop),
+                ("Drop", MenuAction::StashDrop),
+                ("Branch", MenuAction::StashBranch),
+                ("Copy", MenuAction::CopyRef),
+            ] {
+                row = row.child(action_button(
+                    format!("stash-panel-{}-{index}", action.key()),
+                    label,
+                    &theme_row,
+                    {
+                        let weak = weak.clone();
+                        move |cx| {
+                            weak.update(cx, |this, cx| this.run_stash_action(index, action, cx))
+                                .ok();
+                        }
+                    },
+                ));
+            }
+            children.push(row.into_any_element());
+        }
+
+        overlay(theme, 120., 620., overlay_close(weak), children)
     }
 
     fn render_settings(&self, weak: gpui::WeakEntity<Self>) -> AnyElement {
