@@ -1261,6 +1261,10 @@ impl GraphView {
                     }
                 }
                 "," => self.settings_open = !self.settings_open,
+                "d" => {
+                    self.show_detail = !self.show_detail;
+                    self.persist_repo_config();
+                }
                 "r" => {
                     self.load(cx);
                     return;
