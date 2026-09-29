@@ -126,6 +126,9 @@ pub struct GraphView {
     show_detail: bool,
     remembered_selection: std::collections::HashMap<std::path::PathBuf, String>,
     pending_select_sha: Option<String>,
+    suppress_restore_scroll: bool,
+    load_restore_sha: Option<String>,
+    load_restore_scroll: bool,
     tree_cache: std::cell::RefCell<TreeCache>,
     stash_panel_open: bool,
     settings_filter: String,
@@ -662,6 +665,9 @@ impl GraphView {
             show_detail: true,
             remembered_selection: std::collections::HashMap::new(),
             pending_select_sha: None,
+            suppress_restore_scroll: false,
+            load_restore_sha: None,
+            load_restore_scroll: false,
             tree_cache: std::cell::RefCell::default(),
             stash_panel_open: false,
             settings_filter: String::new(),
@@ -782,7 +788,22 @@ impl GraphView {
 
     // -- data -------------------------------------------------------------
 
+    /// Reloads the graph while preserving the current commit selection (used
+    /// when loading more commits) without scrolling the viewport back to it.
+    fn reload_keeping_selection(&mut self, cx: &mut Context<Self>) {
+        self.pending_select_sha = self
+            .selected_commit_index()
+            .and_then(|index| self.commits.get(index))
+            .map(|commit| commit.sha.clone());
+        self.suppress_restore_scroll = self.pending_select_sha.is_some();
+        self.load(cx);
+    }
+
     fn load(&mut self, cx: &mut Context<Self>) {
+        // Snapshot any pending "restore selection" request for this load, so a
+        // later plain reload can't accidentally reuse a stale request.
+        self.load_restore_sha = self.pending_select_sha.take();
+        self.load_restore_scroll = !std::mem::take(&mut self.suppress_restore_scroll);
         self.commits = Arc::new(Vec::new());
         self.error = None;
         self.branch = None;
@@ -885,14 +906,17 @@ impl GraphView {
         match result.commits {
             Ok(commits) => {
                 self.commits = Arc::new(commits);
-                let restored = self.pending_select_sha.take().and_then(|sha| {
+                let restored = self.load_restore_sha.take().and_then(|sha| {
                     self.commits
                         .iter()
                         .position(|commit| commit.sha == sha)
                 });
+                let scroll_to_restored = std::mem::take(&mut self.load_restore_scroll);
                 if let Some(index) = restored {
                     self.selected = Some(RowKind::Commit(index));
-                    self.pending_scroll = Some(RowKind::Commit(index));
+                    if scroll_to_restored {
+                        self.pending_scroll = Some(RowKind::Commit(index));
+                    }
                     self.load_detail(index, cx);
                 } else if self.scroll_to_head_on_load
                     && let Some(index) =
@@ -2293,7 +2317,7 @@ impl Render for GraphView {
             let current = -self.list_state.scroll_px_offset_for_scrollbar().y.as_f32();
             if near_bottom(current, max, 200.) {
                 self.loaded = (self.loaded + 500).min(COMMIT_LIMIT);
-                self.load(cx);
+                self.reload_keeping_selection(cx);
             }
         }
         let theme = self.theme.clone();
@@ -2854,7 +2878,7 @@ impl GraphView {
             "pull" => self.run_op(|repo| git::pull(&repo.path), cx),
             "load-more" => {
                 self.loaded = (self.loaded + 500).min(COMMIT_LIMIT);
-                self.load(cx);
+                self.reload_keeping_selection(cx);
             }
             "theme" => {
                 self.theme = self.theme.toggled();
