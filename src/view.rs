@@ -1267,6 +1267,9 @@ impl GraphView {
                     self.show_detail = !self.show_detail;
                     self.persist_repo_config();
                 }
+                "l" => {
+                    self.stash_panel_open = !self.stash_panel_open;
+                }
                 "r" => {
                     self.load(cx);
                     return;
@@ -1505,7 +1508,12 @@ impl GraphView {
             } else if self.branch_filter.open {
                 self.branch_filter.open = false;
             } else if self.settings_open {
-                self.settings_open = false;
+                // Esc first clears an active filter, then closes the panel.
+                if self.settings_filter.is_empty() {
+                    self.settings_open = false;
+                } else {
+                    self.settings_filter.clear();
+                }
             } else if self.diff.is_some() {
                 self.diff = None;
             } else {

@@ -159,7 +159,7 @@ script/build       cargo 包装脚本
   - [x] Issue Linking、Pull Request Creation（GitHub/GitLab/Bitbucket + `.gitviz.conf` 自定义 `pr_provider` 模板）
   - [x] 配置导出到仓库文件（.gitviz.conf）
 - 键盘快捷键
-  - [x] Cmd+F / Cmd+R / Cmd+S(shift) / Cmd+H / Cmd+D（折叠详情面板）/ Up/Down / Enter / Esc
+  - [x] Cmd+F / Cmd+R / Cmd+S(shift) / Cmd+H / Cmd+D（折叠详情面板）/ Cmd+L（Stash 面板）/ Up/Down / Enter / Esc
   - [x] ⌘↑/⌘↓ 同分支父子跳转；⇧ 变体（沿替代分支）
 - 列与外观
   - [x] Date / Author / Commit 列显示开关（设置面板）；短日期 / 相对日期（“3 days ago”）
