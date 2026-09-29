@@ -2605,6 +2605,12 @@ fn tree_cache_key(
     (repo.to_string(), detail, compact, collapsed)
 }
 
+/// Whether a settings row labelled `label` matches the (already lower-cased)
+/// filter `query`. An empty query matches everything.
+fn settings_matches(query: &str, label: &str) -> bool {
+    query.is_empty() || label.to_lowercase().contains(query)
+}
+
 /// The window title for the given repositories: `gitviz — <label> (<branch>)`.
 /// When several repositories share a name, the full path is used instead so the
 /// title stays unambiguous.
@@ -4511,7 +4517,7 @@ impl GraphView {
         ];
 
         let query = self.settings_filter.trim().to_lowercase();
-        let hit = |label: &str| query.is_empty() || label.to_lowercase().contains(&query);
+        let hit = |label: &str| settings_matches(&query, label);
 
         let mut items: Vec<AnyElement> = Vec::new();
         let matching_toggles: Vec<_> = toggles
@@ -4783,6 +4789,17 @@ impl GraphView {
                             .text_color(theme_add.accent)
                             .child("+ Add remote…"),
                     )
+                    .into_any_element(),
+            );
+        }
+
+        if items.is_empty() {
+            items.push(
+                div()
+                    .px_3()
+                    .py_4()
+                    .text_color(theme.text_muted)
+                    .child("No matching settings")
                     .into_any_element(),
             );
         }
@@ -6569,6 +6586,14 @@ mod tests {
             window_title(&repos, 1, Some("dev")),
             "gitviz — /y/app (dev)"
         );
+    }
+
+    #[test]
+    fn settings_matches_is_case_insensitive() {
+        assert!(settings_matches("", "Anything"));
+        assert!(settings_matches("date", "Show author dates"));
+        assert!(settings_matches("prune", "Fetch: prune tags"));
+        assert!(!settings_matches("zzz", "Show author dates"));
     }
 
     #[test]
