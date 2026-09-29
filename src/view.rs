@@ -4017,6 +4017,7 @@ impl GraphView {
                     .px_3()
                     .py_1()
                     .gap_2()
+                    .hover(|this| this.bg(theme_row.hover))
                     .child(
                         h_flex()
                             .id(format!("branch-toggle-{}", name))
