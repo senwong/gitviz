@@ -128,6 +128,7 @@ pub struct GraphView {
     pending_select_sha: Option<String>,
     tree_cache: std::cell::RefCell<TreeCache>,
     stash_panel_open: bool,
+    settings_filter: String,
     color_preset: usize,
     branch_globs: Vec<String>,
     custom_lane_colors: Vec<String>,
@@ -246,6 +247,8 @@ const COMMANDS: &[(&str, &str)] = &[
     ("Stop reviewing this commit", "end-current-review"),
     ("Add branch glob…", "add-glob"),
     ("Fetch into local branch…", "fetch-into"),
+    ("Edit PR provider template…", "edit-pr-provider"),
+    ("Edit Issue provider template…", "edit-issue-provider"),
     ("Add repository…", "add-repo"),
     ("Remove current repository", "remove-repo"),
     ("Open repository…", "open-repo"),
@@ -661,6 +664,7 @@ impl GraphView {
             pending_select_sha: None,
             tree_cache: std::cell::RefCell::default(),
             stash_panel_open: false,
+            settings_filter: String::new(),
             color_preset: 0,
             branch_globs: Vec::new(),
             custom_lane_colors: Vec::new(),
@@ -1409,6 +1413,28 @@ impl GraphView {
             }
             cx.notify();
             return;
+        }
+
+        if self.settings_open {
+            // Typing filters the settings list.
+            match keystroke.key.as_str() {
+                "backspace" => {
+                    self.settings_filter.pop();
+                    cx.notify();
+                    return;
+                }
+                _ => {
+                    if let Some(character) = &keystroke.key_char
+                        && !character.is_empty()
+                        && !keystroke.modifiers.control
+                        && !keystroke.modifiers.alt
+                    {
+                        self.settings_filter.push_str(character);
+                        cx.notify();
+                        return;
+                    }
+                }
+            }
         }
 
         if keystroke.key == "escape" {
@@ -2644,6 +2670,9 @@ impl GraphView {
             }
             "settings" => {
                 self.settings_open = !self.settings_open;
+                if self.settings_open {
+                    self.settings_filter.clear();
+                }
                 cx.notify();
             }
             "find" => {
@@ -4481,9 +4510,19 @@ impl GraphView {
             ),
         ];
 
-        let mut items: Vec<AnyElement> = vec![section_label(&theme, "Display & behavior")];
+        let query = self.settings_filter.trim().to_lowercase();
+        let hit = |label: &str| query.is_empty() || label.to_lowercase().contains(&query);
+
+        let mut items: Vec<AnyElement> = Vec::new();
+        let matching_toggles: Vec<_> = toggles
+            .into_iter()
+            .filter(|(label, _, _)| hit(label))
+            .collect();
+        if !matching_toggles.is_empty() {
+            items.push(section_label(&theme, "Display & behavior"));
+        }
         items.extend(
-            toggles
+            matching_toggles
                 .into_iter()
                 .map(|(label, on, id)| {
                     let weak = weak.clone();
@@ -4503,8 +4542,7 @@ impl GraphView {
                         .into_any_element()
                 }),
         );
-        items.push(section_label(&theme, "Actions"));
-
+        let mut action_rows: Vec<AnyElement> = Vec::new();
         for (label, id) in [
             ("Cycle repository order (name/path/given)", "repo-order"),
             ("Cycle reference alignment", "ref-align"),
@@ -4519,9 +4557,7 @@ impl GraphView {
             ("Discovery depth +", "depth-plus"),
             ("Export configuration to .gitviz.conf", "export-config"),
             ("Add branch glob…", "add-glob"),
-    ("Fetch into local branch…", "fetch-into"),
-    ("Edit PR provider template…", "edit-pr-provider"),
-    ("Edit Issue provider template…", "edit-issue-provider"),
+            ("Fetch into local branch…", "fetch-into"),
             ("Edit PR provider template…", "edit-pr-provider"),
             ("Edit Issue provider template…", "edit-issue-provider"),
             ("Add repository…", "add-repo"),
@@ -4533,9 +4569,12 @@ impl GraphView {
             ("Clear branch globs", "clear-globs"),
             ("End all code reviews", "end-reviews"),
         ] {
+            if !hit(label) {
+                continue;
+            }
             let weak = weak.clone();
             let theme_row = theme.clone();
-            items.push(
+            action_rows.push(
                 h_flex()
                     .id(id)
                     .w_full()
@@ -4550,16 +4589,23 @@ impl GraphView {
                     .into_any_element(),
             );
         }
+        if !action_rows.is_empty() {
+            items.push(section_label(&theme, "Actions"));
+            items.extend(action_rows);
+        }
 
-        items.push(section_label(&theme, "Hidden context-menu actions"));
+        let mut hidden_rows: Vec<AnyElement> = Vec::new();
         for action in MENU_ACTIONS {
             let key = action.key();
             let label = action.label();
+            if !hit(label) {
+                continue;
+            }
             let hidden = self.hidden_actions.iter().any(|candidate| candidate == key);
             let weak_toggle = weak.clone();
             let theme_row = theme.clone();
             let key_owned = key.to_string();
-            items.push(
+            hidden_rows.push(
                 h_flex()
                     .id(format!("hide-{key}"))
                     .w_full()
@@ -4586,22 +4632,35 @@ impl GraphView {
                     .into_any_element(),
             );
         }
+        if !hidden_rows.is_empty() {
+            items.push(section_label(&theme, "Hidden context-menu actions"));
+            items.extend(hidden_rows);
+        }
 
-        items.push(
-            div()
-                .w_full()
-                .px_3()
-                .pt_2()
-                .pb_1()
-                .text_sm()
-                .text_color(theme.text_muted)
-                .border_t_1()
-                .border_color(theme.border)
-                .child("Remotes")
-                .into_any_element(),
-        );
+        let remote_matches: Vec<String> = self
+            .remotes
+            .iter()
+            .filter(|name| hit(name))
+            .cloned()
+            .collect();
+        let show_add_remote = hit("Add remote");
+        if !remote_matches.is_empty() || show_add_remote {
+            items.push(
+                div()
+                    .w_full()
+                    .px_3()
+                    .pt_2()
+                    .pb_1()
+                    .text_sm()
+                    .text_color(theme.text_muted)
+                    .border_t_1()
+                    .border_color(theme.border)
+                    .child("Remotes")
+                    .into_any_element(),
+            );
+        }
 
-        for name in &self.remotes {
+        for name in &remote_matches {
             let weak_fetch = weak.clone();
             let weak_prune = weak.clone();
             let weak_remove = weak.clone();
@@ -4697,34 +4756,36 @@ impl GraphView {
 
         let weak_add = weak.clone();
         let theme_add = theme.clone();
-        items.push(
-            h_flex()
-                .id("add-remote")
-                .w_full()
-                .px_3()
-                .py_1()
-                .gap_2()
-                .on_click(move |_: &ClickEvent, window, cx| {
-                    let _ = window;
-                    weak_add
-                        .update(cx, |this, cx| {
-                            this.prompt = Some(Prompt {
-                                title: "Add remote (name url)".to_string(),
-                                input: String::new(),
-                                action: PromptAction::AddRemote,
-                                sha: String::new(),
-                            });
-                            cx.notify();
-                        })
-                        .ok();
-                })
-                .child(
-                    div()
-                        .text_color(theme_add.accent)
-                        .child("+ Add remote…"),
-                )
-                .into_any_element(),
-        );
+        if show_add_remote {
+            items.push(
+                h_flex()
+                    .id("add-remote")
+                    .w_full()
+                    .px_3()
+                    .py_1()
+                    .gap_2()
+                    .on_click(move |_: &ClickEvent, window, cx| {
+                        let _ = window;
+                        weak_add
+                            .update(cx, |this, cx| {
+                                this.prompt = Some(Prompt {
+                                    title: "Add remote (name url)".to_string(),
+                                    input: String::new(),
+                                    action: PromptAction::AddRemote,
+                                    sha: String::new(),
+                                });
+                                cx.notify();
+                            })
+                            .ok();
+                    })
+                    .child(
+                        div()
+                            .text_color(theme_add.accent)
+                            .child("+ Add remote…"),
+                    )
+                    .into_any_element(),
+            );
+        }
 
         overlay(theme.clone(), 100., 460., overlay_close(weak.clone()), vec![
             div()
@@ -4735,6 +4796,24 @@ impl GraphView {
                 .border_b_1()
                 .border_color(theme.border)
                 .child("Settings")
+                .into_any_element(),
+            h_flex()
+                .w_full()
+                .px_3()
+                .py_1()
+                .gap_1()
+                .border_b_1()
+                .border_color(theme.border)
+                .text_color(theme.text)
+                .child(if self.settings_filter.is_empty() {
+                    div()
+                        .text_color(theme.text_muted)
+                        .child("Filter settings…")
+                        .into_any_element()
+                } else {
+                    div().child(self.settings_filter.clone()).into_any_element()
+                })
+                .child(caret(&theme, self.caret_on))
                 .into_any_element(),
             v_flex()
                 .id("settings-list")
